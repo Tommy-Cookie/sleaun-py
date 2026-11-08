@@ -70,6 +70,9 @@ class BreakSignal(Exception):
 	def __init__(self, value):
 		self.value = value
 
+class ContinueSignal(Exception):
+	...
+
 
 class ExprExecuter(ExprVisitor):
 	def __init__(self, src: str):
@@ -211,7 +214,10 @@ class ExprExecuter(ExprVisitor):
 		val = None
 		try:
 			while self.visit(cond):
-				val = self.execute_batch(body)
+				try:
+					val = self.execute_batch(body)
+				except ContinueSignal:
+					pass
 		except BreakSignal as e:
 			val = e.value
 		return val
@@ -221,6 +227,9 @@ class ExprExecuter(ExprVisitor):
 		if value is not None:
 			value = self.visit(value)
 		raise BreakSignal(value)
+
+	def visitContinue(self, ctx):
+		raise ContinueSignal()
 
 
 	def visitCall(self, ctx):

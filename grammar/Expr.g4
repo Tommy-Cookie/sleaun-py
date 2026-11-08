@@ -15,6 +15,7 @@ expr: '(' expr ')' # Paren
 	| <assoc=right> ID ':=' expr # Create
 	| <assoc=right> expr '=' expr # Assign
 	| 'break' expr? # Break
+	| 'continue' # continue
 	| atom # Single
 	;
 
