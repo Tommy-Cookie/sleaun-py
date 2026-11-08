@@ -7,10 +7,51 @@ from ExprLexer import ExprLexer
 from ExprParser import ExprParser
 from ExprVisitor import ExprVisitor
 
+add = lambda a, b: a + b
+sub = lambda a, b: a - b
+mul = lambda a, b: a * b
+turediv = lambda a, b: a / b
+
+BINOP_TABLE = {
+	"+": {
+		int: {int: add, float: add},
+		float: {int: add, float: add},
+		str: {str: add}
+	},
+	"-": {
+		int: {int: sub, float: sub},
+		float: {int: sub, float: sub}
+	},
+	"*": {
+		int: {int: mul, float: mul},
+		float: {int: mul, float: mul},
+		str: {int: mul}
+	},
+	"/": {
+		int: {int: turediv, float: turediv},
+		float: {int: turediv, float: turediv}
+	}
+}
+
 
 class ExprExecuter(ExprVisitor):
-	def __init__(self):
+	def __init__(self, src: str):
 		self.env = {"print": print}
+		self.src = src
+
+	def error(self, msg, ctx):
+		line = ctx.start.line
+		col = ctx.start.column + 1
+		lngerr.generic_error(msg, [(line, col)], self.src)		
+
+
+	# {type: lambda, ...}
+	def match_type(self, target, arms: dict, ctx):
+		for k, v in arms.items():
+			if type(target) is k:
+				return v
+		self.error(f"unsupported type: {type(target)}", ctx)
+
 
 	def visitProgram(self, ctx):
 		val = None
@@ -32,11 +73,22 @@ class ExprExecuter(ExprVisitor):
 		rhs = self.visit(ctx.expr(1))
 		op = ctx.op.text
 
-		if op == "+": return lhs + rhs
-		if op == "-": return lhs - rhs
-		if op == "*": return lhs * rhs
-		if op == "/": return lhs / rhs
-		else: raise ValueError(f"UNOP {op!r}")
+		if op == "/" and rhs == 0:
+			if lhs == 0: return float("nan")
+			if lhs < 0: return float("-inf")
+			return float("inf")
+
+		try:
+			table = BINOP_TABLE[op]
+		except:
+			self.error(f"unknow infix operator {op!r}")
+		
+		try:
+			fn = table[type(lhs)][type(rhs)]
+		except:
+			self.error(f"cannot apply {op!r} to {type(lhs)} and {type(rhs)}", ctx)
+
+		return fn(lhs, rhs)
 
 
 	def visitCall(self, ctx):
@@ -84,4 +136,4 @@ def parse_and_execute(file_path):
 	parser.addErrorListener(LangErrorListener(src))
 
 	tree = parser.program()
-	ExprExecuter().visit(tree)
+	ExprExecuter(src).visit(tree)
