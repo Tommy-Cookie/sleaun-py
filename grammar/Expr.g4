@@ -20,6 +20,7 @@ atom: ID # Id
 	| INT # Int
 	| STRNG # String
 	| '[' (expr (',' expr)*)? ']' # Array
+	| '{' expr* '}' # Block
 	;
 
 INT: [0-9]+;

@@ -200,6 +200,14 @@ class ExprExecuter(ExprVisitor):
 			arr.append(self.visit(i))
 		return arr
 
+	def visitBlock(self, ctx):
+		self.push_frame()
+		val = None
+		for c in ctx.expr():
+			val = self.visit(c)
+		self.pop_frame()
+		return val
+
 
 class LangErrorListener(ErrorListener):
 	def __init__(self, src: str):
