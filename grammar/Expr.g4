@@ -8,7 +8,7 @@ expr: '(' expr ')' # Paren
 	| ('+' | '-') expr # Unary
 	| expr op=('*' | '/') expr # Binary
 	| expr op=('+' | '-') expr # Binary
-	| ID ':=' expr # Create
+	| <assoc=right> ID ':=' expr # Create
 	| atom # Single
 	;
 
