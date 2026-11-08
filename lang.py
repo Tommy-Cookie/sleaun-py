@@ -50,11 +50,11 @@ class ExprExecuter(ExprVisitor):
 				f[name] = value
 				return
 		
-		self.error(f"variable '{name}' doesn't exist", ctx)
+		self.error(f"variable {name!r} doesn't exist", ctx)
 
 	def create_frame_variable(self, name, value, ctx):
 		if name in self.frames[0]:
-			self.error(f"redefine variable '{name}'", ctx)
+			self.error(f"redefine variable {name!r}", ctx)
 		
 		self.frames[0][name] = value
 
@@ -63,7 +63,7 @@ class ExprExecuter(ExprVisitor):
 			if name in f:
 				return f[name]
 
-		self.error(f"variable '{name}' doesn't exist", ctx)
+		self.error(f"variable {name!r} doesn't exist", ctx)
 
 	def push_frame(self, frame=None):
 		if frame is None:
