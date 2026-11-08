@@ -36,13 +36,43 @@ BINOP_TABLE = {
 
 class ExprExecuter(ExprVisitor):
 	def __init__(self, src: str):
-		self.env = {"print": print}
+		self.frames: list[dict] = [{"print": print}]
 		self.src = src
 
 	def error(self, msg, ctx):
 		line = ctx.start.line
 		col = ctx.start.column + 1
-		lngerr.generic_error(msg, [(line, col)], self.src)		
+		lngerr.generic_error(msg, [(line, col)], self.src)
+
+	def set_frame_variable(self, name, value, ctx):
+		for f in self.frames:
+			if name in f:
+				f[name] = value
+				return
+		
+		self.error(f"variable '{name}' doesn't exist", ctx)
+
+	def create_frame_variable(self, name, value, ctx):
+		if name in self.frames[0]:
+			self.error(f"redefine variable '{name}'", ctx)
+		
+		self.frames[0][name] = value
+
+	def get_frame_variable(self, name, ctx):
+		for f in self.frames:
+			if name in f:
+				return f[name]
+
+		self.error(f"variable '{name}' doesn't exist", ctx)
+
+	def push_frame(self, frame=None):
+		if frame is None:
+			self.frames.insert(0, {})
+		else:
+			self.frames.insert(0, frame)
+
+	def pop_frame(self):
+		return self.frames.pop(0)
 
 
 	def visitProgram(self, ctx):
@@ -82,6 +112,11 @@ class ExprExecuter(ExprVisitor):
 
 		return fn(lhs, rhs)
 
+	def visitCreate(self, ctx):
+		name = ctx.ID()
+		value = self.visit(ctx.expr())
+		print(f"create {name} := {value!r}")
+
 
 	def visitCall(self, ctx):
 		fn = self.visit(ctx.expr(0))
@@ -102,7 +137,7 @@ class ExprExecuter(ExprVisitor):
 		return ctx.STRNG().getText()[1:-1]
 
 	def visitId(self, ctx):
-		return self.env[ctx.ID().getText()]
+		return self.get_frame_variable(ctx.ID().getText(), ctx)
 
 
 class LangErrorListener(ErrorListener):
