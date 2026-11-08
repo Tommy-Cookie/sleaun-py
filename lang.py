@@ -36,7 +36,7 @@ BINOP_TABLE = {
 
 class ExprExecuter(ExprVisitor):
 	def __init__(self, src: str):
-		self.frames: list[dict] = [{"print": print}]
+		self.frames: list[dict] = [{}, {"print": print}]
 		self.src = src
 
 	def error(self, msg, ctx):
@@ -113,9 +113,9 @@ class ExprExecuter(ExprVisitor):
 		return fn(lhs, rhs)
 
 	def visitCreate(self, ctx):
-		name = ctx.ID()
+		name = ctx.ID().getText()
 		value = self.visit(ctx.expr())
-		print(f"create {name} := {value!r}")
+		self.create_frame_variable(name, value, ctx)
 
 
 	def visitCall(self, ctx):
