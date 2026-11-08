@@ -10,7 +10,7 @@ from ExprVisitor import ExprVisitor
 add = lambda a, b: a + b
 sub = lambda a, b: a - b
 mul = lambda a, b: a * b
-turediv = lambda a, b: a / b
+truediv = lambda a, b: a / b
 
 BINOP_TABLE = {
 	"+": {
@@ -28,8 +28,8 @@ BINOP_TABLE = {
 		str: {int: mul}
 	},
 	"/": {
-		int: {int: turediv, float: turediv},
-		float: {int: turediv, float: turediv}
+		int: {int: truediv, float: truediv},
+		float: {int: truediv, float: truediv}
 	}
 }
 
