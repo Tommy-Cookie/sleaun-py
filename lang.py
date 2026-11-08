@@ -66,6 +66,11 @@ class Slot:
 	set: Callable
 
 
+class BreakSignal(Exception):
+	def __init__(self, value):
+		self.value = value
+
+
 class ExprExecuter(ExprVisitor):
 	def __init__(self, src: str):
 		self.frames: list[dict] = [{}, {"print": print}]
@@ -169,12 +174,12 @@ class ExprExecuter(ExprVisitor):
 
 		try:
 			table = BINOP_TABLE[op]
-		except:
+		except KeyError:
 			self.error(f"unknow infix operator {op!r}", ctx)
 		
 		try:
 			fn = table[type(lhs)][type(rhs)]
-		except:
+		except KeyError:
 			self.error(f"cannot apply {op!r} to {type(lhs)} and {type(rhs)}", ctx)
 
 		return fn(lhs, rhs)
@@ -204,9 +209,18 @@ class ExprExecuter(ExprVisitor):
 		cond = ctx.expr(0)
 		body = ctx.expr()[1:]
 		val = None
-		while self.visit(cond):
-			val = self.execute_batch(body)
+		try:
+			while self.visit(cond):
+				val = self.execute_batch(body)
+		except BreakSignal as e:
+			val = e.value
 		return val
+
+	def visitBreak(self, ctx):
+		value = ctx.expr()
+		if value is not None:
+			value = self.visit(value)
+		raise BreakSignal(value)
 
 
 	def visitCall(self, ctx):
