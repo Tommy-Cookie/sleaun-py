@@ -9,13 +9,19 @@ expr: '(' expr ')' # Paren
 	| expr op=('*' | '/') expr # Binary
 	| expr op=('+' | '-') expr # Binary
 	| <assoc=right> ID ':=' expr # Create
+	| <assoc=right> lvalue '=' expr # Assign
+	| lvalue # Read
 	| atom # Single
 	;
 
 atom: FLOAT # Float
 	| INT # Int
 	| STRNG # String
-	| ID # Id
+	;
+
+lvalue: ID # LVar
+	| lvalue '[' expr ']' # LIndex
+	| lvalue '.' ID # LPropr
 	;
 
 INT: [0-9]+;

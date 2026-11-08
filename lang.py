@@ -1,11 +1,12 @@
 
-import sys
 import lngerr
 from antlr4 import *
 from antlr4.error.ErrorListener import *
 from ExprLexer import ExprLexer
 from ExprParser import ExprParser
 from ExprVisitor import ExprVisitor
+from dataclasses import dataclass
+from typing import Callable
 
 add = lambda a, b: a + b
 sub = lambda a, b: a - b
@@ -32,6 +33,12 @@ BINOP_TABLE = {
 		float: {int: truediv, float: truediv}
 	}
 }
+
+
+@dataclass
+class Slot:
+	get: Callable
+	set: Callable
 
 
 class ExprExecuter(ExprVisitor):
@@ -74,6 +81,16 @@ class ExprExecuter(ExprVisitor):
 	def pop_frame(self):
 		return self.frames.pop(0)
 
+	def resolve_lvalue(self, ctx):
+		if isinstance(ctx, ExprParser.LVarContext):
+			name = ctx.ID().getText()
+			return Slot(
+				get = lambda: self.get_frame_variable(name, ctx),
+				set = lambda v: self.set_frame_variable(name, v, ctx)
+			)
+
+		self.error(f"invalid assignment target {ctx}")
+
 
 	def visitProgram(self, ctx):
 		val = None
@@ -103,7 +120,7 @@ class ExprExecuter(ExprVisitor):
 		try:
 			table = BINOP_TABLE[op]
 		except:
-			self.error(f"unknow infix operator {op!r}")
+			self.error(f"unknow infix operator {op!r}", ctx)
 		
 		try:
 			fn = table[type(lhs)][type(rhs)]
@@ -116,7 +133,12 @@ class ExprExecuter(ExprVisitor):
 		name = ctx.ID().getText()
 		value = self.visit(ctx.expr())
 		self.create_frame_variable(name, value, ctx)
+		return value
 
+	def visitAssign(self, ctx):
+		slot = self.resolve_lvalue(ctx.lvalue())
+		value = self.visit(ctx.expr())
+		slot.set(value)
 		return value
 
 
@@ -138,8 +160,8 @@ class ExprExecuter(ExprVisitor):
 	def visitString(self, ctx):
 		return ctx.STRNG().getText()[1:-1]
 
-	def visitId(self, ctx):
-		return self.get_frame_variable(ctx.ID().getText(), ctx)
+	def visitRead(self, ctx):
+		return self.resolve_lvalue(ctx.lvalue()).get()
 
 
 class LangErrorListener(ErrorListener):
@@ -151,7 +173,7 @@ class LangErrorListener(ErrorListener):
 
 
 def parse_and_execute(file_path):
-	input_stream = FileStream(sys.argv[1], encoding="utf-8")
+	input_stream = FileStream(file_path, encoding="utf-8")
 
 	with open(file_path, encoding="utf-8") as file:
 		src = file.read()
