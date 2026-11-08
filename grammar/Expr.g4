@@ -5,23 +5,20 @@ program: expr* EOF;
 
 expr: '(' expr ')' # Paren
 	| expr '(' (expr (',' expr)*)? ')' # Call
+	| expr '[' expr ']' # Index
 	| ('+' | '-') expr # Unary
 	| expr op=('*' | '/') expr # Binary
 	| expr op=('+' | '-') expr # Binary
 	| <assoc=right> ID ':=' expr # Create
-	| <assoc=right> lvalue '=' expr # Assign
-	| lvalue # Read
+	| <assoc=right> expr '=' expr # Assign
 	| atom # Single
 	;
 
-atom: FLOAT # Float
+atom: ID # Id
+	| FLOAT # Float
 	| INT # Int
 	| STRNG # String
-	;
-
-lvalue: ID # LVar
-	| lvalue '[' expr ']' # LIndex
-	| lvalue '.' ID # LPropr
+	| '[' (expr (',' expr)*)? ']' # Array
 	;
 
 INT: [0-9]+;

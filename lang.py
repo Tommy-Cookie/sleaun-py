@@ -81,15 +81,32 @@ class ExprExecuter(ExprVisitor):
 	def pop_frame(self):
 		return self.frames.pop(0)
 
-	def resolve_lvalue(self, ctx):
-		if isinstance(ctx, ExprParser.LVarContext):
+	def as_slot(self, ctx):
+		if isinstance(ctx, ExprParser.SingleContext):
+			atom = ctx.atom()
+			if isinstance(atom, ExprParser.IdContext):
+				name = atom.ID().getText()
+				return Slot(
+					get = lambda: self.get_frame_variable(name, atom),
+					set = lambda v: self.set_frame_variable(name, v, atom)
+				)
+
+		if isinstance(ctx, ExprParser.IdContext):
 			name = ctx.ID().getText()
 			return Slot(
 				get = lambda: self.get_frame_variable(name, ctx),
 				set = lambda v: self.set_frame_variable(name, v, ctx)
 			)
 
-		self.error(f"invalid assignment target {ctx}")
+		if isinstance(ctx, ExprParser.IndexContext):
+			base = self.as_slot(ctx.expr(0))
+			index = self.visit(ctx.expr(1))
+			return Slot(
+				get = lambda: base.get()[index],
+				set = lambda v: base.get().__setitem__(index, v)
+			)
+
+		self.error(f"invalid assignment target {ctx!r}", ctx)
 
 
 	def visitProgram(self, ctx):
@@ -136,10 +153,13 @@ class ExprExecuter(ExprVisitor):
 		return value
 
 	def visitAssign(self, ctx):
-		slot = self.resolve_lvalue(ctx.lvalue())
-		value = self.visit(ctx.expr())
+		slot = self.as_slot(ctx.expr(0))
+		value = self.visit(ctx.expr(1))
 		slot.set(value)
 		return value
+
+	def visitIndex(self, ctx):
+		return self.as_slot(ctx).get()
 
 
 	def visitCall(self, ctx):
@@ -160,8 +180,14 @@ class ExprExecuter(ExprVisitor):
 	def visitString(self, ctx):
 		return ctx.STRNG().getText()[1:-1]
 
-	def visitRead(self, ctx):
-		return self.resolve_lvalue(ctx.lvalue()).get()
+	def visitId(self, ctx):
+		return self.as_slot(ctx).get()
+
+	def visitArray(self, ctx):
+		arr = []
+		for i in ctx.expr():
+			arr.append(self.visit(i))
+		return arr
 
 
 class LangErrorListener(ErrorListener):
