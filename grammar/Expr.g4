@@ -9,9 +9,11 @@ expr: '(' expr ')' # Paren
 	| ('+' | '-') expr # Unary
 	| expr op=('*' | '/') expr # Binary
 	| expr op=('+' | '-') expr # Binary
+	| expr op=('<' | '>' | '==' | '<=' | '>=') expr # Binary
 	| <assoc=right> expr '?' expr ':' expr # Ternary
 	| <assoc=right> ID ':=' expr # Create
 	| <assoc=right> expr '=' expr # Assign
+	| expr '{' expr* '}' # While
 	| atom # Single
 	;
 

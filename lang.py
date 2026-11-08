@@ -12,6 +12,11 @@ add = lambda a, b: a + b
 sub = lambda a, b: a - b
 mul = lambda a, b: a * b
 truediv = lambda a, b: a / b
+less = lambda a, b: a < b
+greater = lambda a, b: a > b
+eq = lambda a, b: a == b
+lesseq = lambda a, b: a <= b
+greatereq = lambda a, b: a >= b
 
 BINOP_TABLE = {
 	"+": {
@@ -31,6 +36,26 @@ BINOP_TABLE = {
 	"/": {
 		int: {int: truediv, float: truediv},
 		float: {int: truediv, float: truediv}
+	},
+	"<": {
+		int: {int: less, float: less},
+		float: {int: less, float: less}
+	},
+	">": {
+		int: {int: greater, float: greater},
+		float: {int: greater, float: greater}
+	},
+	"==": {
+		int: {int: eq, float: eq},
+		float: {int: eq, float: eq}
+	},
+	"<=": {
+		int: {int: lesseq, float: lesseq},
+		float: {int: lesseq, float: lesseq}
+	},
+	">=": {
+		int: {int: greatereq, float: greatereq},
+		float: {int: greatereq, float: greatereq}
 	}
 }
 
@@ -78,6 +103,12 @@ class ExprExecuter(ExprVisitor):
 	def pop_frame(self):
 		return self.frames.pop(0)
 
+	def execute_batch(self, exprs):
+		val = None
+		for e in exprs:
+			val = self.visit(e)
+		return val
+
 	def as_slot(self, ctx):
 		if isinstance(ctx, ExprParser.SingleContext):
 			atom = ctx.atom()
@@ -115,10 +146,7 @@ class ExprExecuter(ExprVisitor):
 
 
 	def visitProgram(self, ctx):
-		val = None
-		for c in ctx.expr():
-			val = self.visit(c)
-		return val
+		return self.execute_batch(ctx.expr())
 
 
 	def visitParen(self, ctx):
@@ -172,6 +200,14 @@ class ExprExecuter(ExprVisitor):
 			return self.visit(ctx.expr(1))
 		return self.visit(ctx.expr(2))
 
+	def visitWhile(self, ctx):
+		cond = ctx.expr(0)
+		body = ctx.expr()[1:]
+		val = None
+		while self.visit(cond):
+			val = self.execute_batch(body)
+		return val
+
 
 	def visitCall(self, ctx):
 		fn = self.visit(ctx.expr(0))
@@ -202,9 +238,7 @@ class ExprExecuter(ExprVisitor):
 
 	def visitBlock(self, ctx):
 		self.push_frame()
-		val = None
-		for c in ctx.expr():
-			val = self.visit(c)
+		val = self.execute_batch(ctx.expr())
 		self.pop_frame()
 		return val
 
@@ -232,4 +266,5 @@ def parse_and_execute(file_path):
 	parser.addErrorListener(LangErrorListener(src))
 
 	tree = parser.program()
+	print(tree.toStringTree(recog=parser))
 	ExprExecuter(src).visit(tree)
