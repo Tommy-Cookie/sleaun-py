@@ -45,14 +45,6 @@ class ExprExecuter(ExprVisitor):
 		lngerr.generic_error(msg, [(line, col)], self.src)		
 
 
-	# {type: lambda, ...}
-	def match_type(self, target, arms: dict, ctx):
-		for k, v in arms.items():
-			if type(target) is k:
-				return v
-		self.error(f"unsupported type: {type(target)}", ctx)
-
-
 	def visitProgram(self, ctx):
 		val = None
 		for c in ctx.expr():
