@@ -167,6 +167,12 @@ class ExprExecuter(ExprVisitor):
 		return self.as_slot(ctx).get()
 
 
+	def visitTernary(self, ctx):
+		if self.visit(ctx.expr(0)):
+			return self.visit(ctx.expr(1))
+		return self.visit(ctx.expr(2))
+
+
 	def visitCall(self, ctx):
 		fn = self.visit(ctx.expr(0))
 		args = [self.visit(t) for t in ctx.expr()[1:]]
