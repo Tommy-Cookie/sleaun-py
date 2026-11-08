@@ -117,6 +117,8 @@ class ExprExecuter(ExprVisitor):
 		value = self.visit(ctx.expr())
 		self.create_frame_variable(name, value, ctx)
 
+		return value
+
 
 	def visitCall(self, ctx):
 		fn = self.visit(ctx.expr(0))
