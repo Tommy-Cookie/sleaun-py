@@ -81,11 +81,19 @@ class ExprExecuter(ExprVisitor):
 	def as_slot(self, ctx):
 		if isinstance(ctx, ExprParser.SingleContext):
 			atom = ctx.atom()
+
 			if isinstance(atom, ExprParser.IdContext):
 				name = atom.ID().getText()
 				return Slot(
 					get = lambda: self.get_frame_variable(name, atom),
 					set = lambda v: self.set_frame_variable(name, v, atom)
+				)
+
+			if isinstance(atom, ExprParser.ArrayContext):
+				value = self.visit(atom)
+				return Slot(
+					get = lambda: value,
+					set = lambda _: self.error(f"invalid target {atom!r}", atom)
 				)
 
 		if isinstance(ctx, ExprParser.IdContext):
@@ -103,7 +111,7 @@ class ExprExecuter(ExprVisitor):
 				set = lambda v: base.get().__setitem__(index, v)
 			)
 
-		self.error(f"invalid assignment target {ctx!r}", ctx)
+		self.error(f"invalid target {ctx!r}", ctx)
 
 
 	def visitProgram(self, ctx):
