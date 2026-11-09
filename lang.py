@@ -289,5 +289,5 @@ def parse_and_execute(file_path):
 	parser.addErrorListener(LangErrorListener(src))
 
 	tree = parser.program()
-	print(tree.toStringTree(recog=parser))
+	# print(tree.toStringTree(recog=parser))
 	ExprExecuter(src).visit(tree)
