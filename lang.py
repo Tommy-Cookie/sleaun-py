@@ -6,7 +6,7 @@ from ExprLexer import ExprLexer
 from ExprParser import ExprParser
 from ExprVisitor import ExprVisitor
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Any
 
 add = lambda a, b: a + b
 sub = lambda a, b: a - b
@@ -72,6 +72,18 @@ class BreakSignal(Exception):
 
 class ContinueSignal(Exception):
 	...
+
+class ReturnSignal(Exception):
+	def __init__(self, value):
+		self.value = value
+
+
+@dataclass
+class Function:
+	args: list[str]
+	body: Any
+	sub_frames: list[dict]
+	name: str = "<anonymous>"
 
 
 class ExprExecuter(ExprVisitor):
@@ -232,10 +244,62 @@ class ExprExecuter(ExprVisitor):
 		raise ContinueSignal()
 
 
+	def visitNamedFn(self, ctx):
+		ids = ctx.ID()
+		name = ids[0].getText()
+		args = [a.getText() for a in ids[1:]]
+		body = ctx.expr()
+
+		sub_frames = self.frames.copy() # shallow copy: captures the frames when created
+		fn = Function(args, body, sub_frames, name)
+
+		self.create_frame_variable(name, fn, ctx)
+		return fn
+
+	def visitAnonyFn(self, ctx):
+		args = [a.getText() for a in ctx.ID()]
+		body = ctx.expr()
+
+		sub_frames = self.frames.copy() # shallow copy: captures the frames when created
+		fn = Function(args, body, sub_frames)
+
+		return fn
+
 	def visitCall(self, ctx):
 		fn = self.visit(ctx.expr(0))
 		args = [self.visit(t) for t in ctx.expr()[1:]]
-		return fn(*args)
+
+		if callable(fn):
+			return fn(*args)
+
+		if isinstance(fn, Function):
+			if len(args) != len(fn.args):
+				self.error(f"{fn} requires {len(fn.args)} argument(s), got {len(args)} instead", ctx)
+
+			# aliasing istead of copying here, because
+			# step                                 self.frames   saved
+			# -----------------------------------------------------------------
+			# save old frames                      L1            L1
+			# create a new list and rebind frames  L2            L1
+			# run body                             L2 (mutated)  L1 (untouched)
+			# restore frames                       L1            L1
+			saved = self.frames
+			
+			self.frames = fn.sub_frames.copy() + [dict(zip(fn.args, args))] # rebind
+			try:
+				return self.visit(fn.body)
+			except ReturnSignal as e:
+				return e.value
+			finally:
+				self.frames = saved
+
+		self.error(f"{type(fn)} is not callable", ctx)
+
+	def visitReturn(self, ctx):
+		value = ctx.expr()
+		if value is not None:
+			value = self.visit(value)
+		raise ReturnSignal(value)
 
 
 	def visitSingle(self, ctx):

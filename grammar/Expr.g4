@@ -15,7 +15,8 @@ expr: '(' expr ')' # Paren
 	| <assoc=right> ID ':=' expr # Create
 	| <assoc=right> expr '=' expr # Assign
 	| 'break' expr? # Break
-	| 'continue' # continue
+	| 'continue' # Continue
+	| 'return' expr? # Return
 	| atom # Single
 	;
 
@@ -25,6 +26,8 @@ atom: ID # Id
 	| STRNG # String
 	| '[' (expr (',' expr)*)? ']' # Array
 	| '{' SEP* (expr (SEP+ expr)*)? SEP* '}' # Block
+	| <assoc=right> ID '(' (ID (',' ID)*)? ')' '=>' expr # NamedFn
+	| <assoc=right> '(' (ID (',' ID)*)? ')' '=>' expr # AnonyFn
 	;
 
 INT: [0-9]+;
