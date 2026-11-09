@@ -1,7 +1,7 @@
 
 grammar Expr;
 
-program: SEP* (expr (SEP+ | EOF))* EOF;
+program: SEP* (expr (SEP+ expr)*)? SEP* EOF;
 
 expr: '(' expr ')' # Paren
 	| expr '(' (expr (',' expr)*)? ')' # Call
@@ -24,7 +24,7 @@ atom: ID # Id
 	| INT # Int
 	| STRNG # String
 	| '[' (expr (',' expr)*)? ']' # Array
-	| '{' SEP* (expr (SEP+ | '}'))* '}' # Block
+	| '{' SEP* (expr (SEP+ expr)*)? SEP* '}' # Block
 	;
 
 INT: [0-9]+;
