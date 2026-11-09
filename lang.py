@@ -288,7 +288,7 @@ class ExprExecuter(ExprVisitor):
 			# restore frames                       L1            L1
 			saved = self.frames
 			
-			self.frames = fn.sub_frames.copy() + [dict(zip(fn.args, args))] # rebind
+			self.frames = [dict(zip(fn.args, args))] + fn.sub_frames.copy() # rebind
 			try:
 				return self.visit(fn.body)
 			except ReturnSignal as e:
