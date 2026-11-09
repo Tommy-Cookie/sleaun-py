@@ -166,7 +166,10 @@ class ExprExecuter(ExprVisitor):
 
 
 	def visitProgram(self, ctx):
-		return self.execute_batch(ctx.expr())
+		try:
+			return self.execute_batch(ctx.expr())
+		except BreakSignal, ContinueSignal, ReturnSignal:
+			self.error("caonnot break, continue, or return on top level", ctx)
 
 
 	def visitParen(self, ctx):
