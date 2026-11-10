@@ -27,9 +27,9 @@ atom: ID # Id
 	| FLOAT # Float
 	| INT # Int
 	| STRING # String
-	| '[' (expr (',' expr)*)? ']' # Array
-	| '{' (entry (',' entry)*)? ','? '}' # Map
+	| '[' (expr (',' expr )*)? ']' # Array
 	| '{' SEP* (expr (SEP+ expr)*)? SEP* '}' # Block
+	| '{' (entry (',' entry )*)? ','? '}' # Map
 	| <assoc=right> ID '(' (ID (',' ID)*)? ')' '=>' expr # NamedFn
 	| <assoc=right> '(' (ID (',' ID)*)? ')' '=>' expr # AnonyFn
 	;
@@ -41,7 +41,9 @@ INT: [0-9]+;
 FLOAT: [0-9]+ '.' [0-9]+;
 STRING: '"' .*? '"';
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
-SEP: '\n' | ';';
+SEP: NL | ';';
+NL: '\r\n' | '\n';
 
 WS: [ \t\r]+ -> skip;
 COM: ('//' ~[\n]* | '/*' .*? '*/') -> skip;
+ESNL: '\\' WS* NL -> skip;
