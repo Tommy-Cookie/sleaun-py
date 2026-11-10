@@ -406,20 +406,25 @@ class LangErrorListener(ErrorListener):
 		lngerr.generic_error(f"{msg}", [(line, column + 1)], self.src)
 
 
+def parse_and_execute_src(src: str):
+	input_stream = InputStream(src)
+
+	lexer = ExprLexer(input_stream)
+	lexer.removeErrorListeners()
+	lexer.addErrorListener(LangErrorListener(src))
+	
+	parser = ExprParser(CommonTokenStream(lexer))
+	parser.removeErrorListeners()
+	parser.addErrorListener(LangErrorListener(src))
+	
+	tree = parser.program()
+	ExprExecuter(src).visit(tree)
+
+
 def parse_and_execute(file_path):
 	input_stream = FileStream(file_path, encoding="utf-8")
 
 	with open(file_path, encoding="utf-8") as file:
 		src = file.read()
 
-	lexer = ExprLexer(input_stream)
-	lexer.removeErrorListeners()
-	lexer.addErrorListener(LangErrorListener(src))
-
-	parser = ExprParser(CommonTokenStream(lexer))
-	parser.removeErrorListeners()
-	parser.addErrorListener(LangErrorListener(src))
-
-	tree = parser.program()
-	# print(tree.toStringTree(recog=parser))
-	ExprExecuter(src).visit(tree)
+	parse_and_execute_src(src)
