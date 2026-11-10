@@ -277,12 +277,11 @@ class ExprExecuter(ExprVisitor):
 		for arm in ctx.arm():
 			binds = self.try_match(value, arm.atom())
 			if binds is not None:
-				saved = self.frames # same idea as closures
-				self.frames = [binds] + self.frames.copy()
+				self.push_frame(binds)
 				try:
 					return self.visit(arm.expr())
 				finally:
-					self.frames = saved
+					self.pop_frame()
 
 		self.error(f"no pattern matched value {value!r}", ctx)
 
@@ -368,8 +367,10 @@ class ExprExecuter(ExprVisitor):
 
 	def visitBlock(self, ctx):
 		self.push_frame()
-		val = self.execute_batch(ctx.expr())
-		self.pop_frame()
+		try:
+			val = self.execute_batch(ctx.expr())
+		finally:
+			self.pop_frame()
 		return val
 
 
