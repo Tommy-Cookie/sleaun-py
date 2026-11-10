@@ -66,6 +66,12 @@ class Slot:
 	set: Callable
 
 
+@dataclass
+class CallInfo:
+	line: int
+	col: int
+
+
 class BreakSignal(Exception):
 	def __init__(self, value):
 		self.value = value
@@ -83,18 +89,21 @@ class Function:
 	args: list[str]
 	body: Any
 	sub_frames: list[dict]
-	name: str = "<anonymous>"
 
 
 class ExprExecuter(ExprVisitor):
 	def __init__(self, src: str):
 		self.frames: list[dict] = [{}, {"print": print, "true": True, "false": False, "null": None}]
 		self.src = src
+		self.call_stack: list[CallInfo] = []
 
 	def error(self, msg, ctx):
-		line = ctx.start.line
-		col = ctx.start.column + 1
-		lngerr.generic_error(msg, [(line, col)], self.src)
+		poses = [(ctx.start.line, ctx.start.column + 1)]
+
+		for c in self.call_stack[::-1]:
+			poses.append((c.line, c.col))
+
+		lngerr.generic_error(msg, poses, self.src)
 
 	def set_frame_variable(self, name, value, ctx):
 		for f in self.frames:
@@ -309,7 +318,7 @@ class ExprExecuter(ExprVisitor):
 		body = ctx.expr()
 
 		sub_frames = self.frames.copy() # shallow copy: captures the frames when created
-		fn = Function(args, body, sub_frames, name)
+		fn = Function(args, body, sub_frames)
 
 		self.create_frame_variable(name, fn, ctx)
 		return fn
@@ -334,6 +343,9 @@ class ExprExecuter(ExprVisitor):
 			if len(args) != len(fn.args):
 				self.error(f"{fn} requires {len(fn.args)} argument(s), got {len(args)} instead", ctx)
 
+			self.call_stack.append(CallInfo(
+				ctx.start.line, ctx.start.column + 1
+			))
 			# aliasing istead of copying here, because
 			# step                                 self.frames   saved
 			# -----------------------------------------------------------------
@@ -350,6 +362,7 @@ class ExprExecuter(ExprVisitor):
 				return e.value
 			finally:
 				self.frames = saved
+				self.call_stack.pop()
 
 		self.error(f"{type(fn)} is not callable", ctx)
 
