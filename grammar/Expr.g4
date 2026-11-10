@@ -7,6 +7,7 @@ expr: '(' expr ')' # Paren
 	| expr '(' (expr (',' expr)*)? ')' # Call
 	| expr '[' expr ']' # Index
 	| ('+' | '-') expr # Unary
+	| expr '{' SEP* (arm (SEP+ arm)*) SEP* '}' # Match
 	| expr op=('*' | '/') expr # Binary
 	| expr op=('+' | '-') expr # Binary
 	| <assoc=right> expr op=('+=' | '-=' | '*=' | '/=') expr # InPlace
@@ -24,16 +25,18 @@ expr: '(' expr ')' # Paren
 atom: ID # Id
 	| FLOAT # Float
 	| INT # Int
-	| STRNG # String
+	| STRING # String
 	| '[' (expr (',' expr)*)? ']' # Array
 	| '{' SEP* (expr (SEP+ expr)*)? SEP* '}' # Block
 	| <assoc=right> ID '(' (ID (',' ID)*)? ')' '=>' expr # NamedFn
 	| <assoc=right> '(' (ID (',' ID)*)? ')' '=>' expr # AnonyFn
 	;
 
+arm: atom '->' expr;
+
 INT: [0-9]+;
 FLOAT: [0-9]+ '.' [0-9]+;
-STRNG: '"' .*? '"';
+STRING: '"' .*? '"';
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
 SEP: '\n' | ';';
 

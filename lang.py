@@ -182,6 +182,18 @@ class ExprExecuter(ExprVisitor):
 		
 		return fn(lhs, rhs)
 
+	def try_match(self, value, pctx):
+		if isinstance(pctx, ExprParser.IntContext):
+			return {} if type(value) is int and value == self.visit(pctx) else None
+		if isinstance(pctx, ExprParser.FloatContext):
+			return {} if type(value) is float and value == self.visit(pctx) else None
+		if isinstance(pctx, ExprParser.StringContext):
+			return {} if type(value) is str and value == self.visit(pctx) else None
+		if isinstance(pctx, ExprParser.IdContext):
+			return {pctx.ID().getText(): value}
+
+		self.error(f"unsuported matching arm type {pctx!r}", pctx)
+
 
 	def visitProgram(self, ctx):
 		try:
@@ -259,6 +271,21 @@ class ExprExecuter(ExprVisitor):
 	def visitContinue(self, ctx):
 		raise ContinueSignal()
 
+	def visitMatch(self, ctx):
+		value = self.visit(ctx.expr())
+	
+		for arm in ctx.arm():
+			binds = self.try_match(value, arm.atom())
+			if binds is not None:
+				saved = self.frames # same idea as closures
+				self.frames = [binds] + self.frames.copy()
+				try:
+					return self.visit(arm.expr())
+				finally:
+					self.frames = saved
+
+		self.error(f"no pattern matched value {value!r}", ctx)
+
 
 	def visitNamedFn(self, ctx):
 		ids = ctx.ID()
@@ -328,7 +355,7 @@ class ExprExecuter(ExprVisitor):
 		return int(ctx.INT().getText())
 
 	def visitString(self, ctx):
-		return ctx.STRNG().getText()[1:-1]
+		return ctx.STRING().getText()[1:-1]
 
 	def visitId(self, ctx):
 		return self.as_slot(ctx).get()
