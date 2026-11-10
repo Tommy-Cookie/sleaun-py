@@ -6,6 +6,7 @@ program: SEP* (expr (SEP+ expr)*)? SEP* EOF;
 expr: '(' expr ')' # Paren
 	| expr '(' (expr (',' expr)*)? ')' # Call
 	| expr '[' expr ']' # Index
+	| expr '.' ID # Attr
 	| ('+' | '-') expr # Unary
 	| expr '{' SEP* (arm (SEP+ arm)*) SEP* '}' # Match
 	| expr op=('*' | '/') expr # Binary
@@ -27,12 +28,14 @@ atom: ID # Id
 	| INT # Int
 	| STRING # String
 	| '[' (expr (',' expr)*)? ']' # Array
+	| '{' (entry (',' entry)*)? ','? '}' # Map
 	| '{' SEP* (expr (SEP+ expr)*)? SEP* '}' # Block
 	| <assoc=right> ID '(' (ID (',' ID)*)? ')' '=>' expr # NamedFn
 	| <assoc=right> '(' (ID (',' ID)*)? ')' '=>' expr # AnonyFn
 	;
 
 arm: atom '->' expr;
+entry: atom ':' expr;
 
 INT: [0-9]+;
 FLOAT: [0-9]+ '.' [0-9]+;

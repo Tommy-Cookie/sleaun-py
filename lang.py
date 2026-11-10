@@ -88,7 +88,7 @@ class Function:
 
 class ExprExecuter(ExprVisitor):
 	def __init__(self, src: str):
-		self.frames: list[dict] = [{}, {"print": print}]
+		self.frames: list[dict] = [{}, {"print": print, "true": True, "false": False, "null": None}]
 		self.src = src
 
 	def error(self, msg, ctx):
@@ -140,7 +140,7 @@ class ExprExecuter(ExprVisitor):
 					set = lambda v: self.set_frame_variable(name, v, atom)
 				)
 
-			if isinstance(atom, ExprParser.ArrayContext):
+			if isinstance(atom, ExprParser.ArrayContext) or isinstance(atom, ExprParser.MapContext):
 				value = self.visit(atom)
 				return Slot(
 					get = lambda: value,
@@ -160,6 +160,14 @@ class ExprExecuter(ExprVisitor):
 			return Slot(
 				get = lambda: base.get()[index],
 				set = lambda v: base.get().__setitem__(index, v)
+			)
+
+		if isinstance(ctx, ExprParser.AttrContext):
+			base = self.as_slot(ctx.expr())
+			attr = ctx.ID().getText()
+			return Slot(
+				get = lambda: base.get()[attr],
+				set = lambda v: base.get().__setitem__(attr, v)
 			)
 
 		self.error(f"invalid target {ctx!r}", ctx)
@@ -193,6 +201,11 @@ class ExprExecuter(ExprVisitor):
 			return {pctx.ID().getText(): value}
 
 		self.error(f"unsuported matching arm type {pctx!r}", pctx)
+
+	def solve_entry(self, ctx):
+		if isinstance(ctx, ExprParser.IdContext):
+			return ctx.ID().getText()
+		return self.visit(ctx)
 
 
 	def visitProgram(self, ctx):
@@ -240,6 +253,9 @@ class ExprExecuter(ExprVisitor):
 		return value
 
 	def visitIndex(self, ctx):
+		return self.as_slot(ctx).get()
+
+	def visitAttr(self, ctx):
 		return self.as_slot(ctx).get()
 
 
@@ -364,6 +380,14 @@ class ExprExecuter(ExprVisitor):
 		for i in ctx.expr():
 			arr.append(self.visit(i))
 		return arr
+
+	def visitMap(self, ctx):
+		mp = {}
+		for e in ctx.entry():
+			key = self.solve_entry(e.atom())
+			value = self.visit(e.expr())
+			mp[key] = value
+		return mp
 
 	def visitBlock(self, ctx):
 		self.push_frame()
