@@ -11,7 +11,7 @@ expr: '(' expr ')' # Paren
 	| expr op=('+' | '-') expr # Binary
 	| expr op=('<' | '>' | '==' | '<=' | '>=') expr # Binary
 	| <assoc=right> expr '?' expr ':' expr # Ternary
-	| expr '@' expr # While
+	| expr '::' expr # While
 	| <assoc=right> ID ':=' expr # Create
 	| <assoc=right> expr '=' expr # Assign
 	| 'break' expr? # Break
