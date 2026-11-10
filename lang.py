@@ -164,6 +164,24 @@ class ExprExecuter(ExprVisitor):
 
 		self.error(f"invalid target {ctx!r}", ctx)
 
+	def perform_binop(self, lhs, rhs, op, ctx):
+		if op == "/" and rhs == 0:
+			if lhs == 0: return float("nan")
+			if lhs < 0: return float("-inf")
+			return float("inf")
+		
+		try:
+			table = BINOP_TABLE[op]
+		except KeyError:
+			self.error(f"unknow infix operator {op!r}", ctx)
+				
+		try:
+			fn = table[type(lhs)][type(rhs)]
+		except KeyError:
+			self.error(f"cannot apply {op!r} to {type(lhs)} and {type(rhs)}", ctx)
+		
+		return fn(lhs, rhs)
+
 
 	def visitProgram(self, ctx):
 		try:
@@ -185,22 +203,17 @@ class ExprExecuter(ExprVisitor):
 		rhs = self.visit(ctx.expr(1))
 		op = ctx.op.text
 
-		if op == "/" and rhs == 0:
-			if lhs == 0: return float("nan")
-			if lhs < 0: return float("-inf")
-			return float("inf")
+		return self.perform_binop(lhs, rhs, op, ctx)
 
-		try:
-			table = BINOP_TABLE[op]
-		except KeyError:
-			self.error(f"unknow infix operator {op!r}", ctx)
-		
-		try:
-			fn = table[type(lhs)][type(rhs)]
-		except KeyError:
-			self.error(f"cannot apply {op!r} to {type(lhs)} and {type(rhs)}", ctx)
+	def visitInPlace(self, ctx):
+		lhs = self.as_slot(ctx.expr(0))
+		rhs = self.visit(ctx.expr(1))
+		op = ctx.op.text[:-1]
 
-		return fn(lhs, rhs)
+		value = self.perform_binop(lhs.get(), rhs, op, ctx)
+		lhs.set(value)
+		return value
+	
 
 	def visitCreate(self, ctx):
 		name = ctx.ID().getText()

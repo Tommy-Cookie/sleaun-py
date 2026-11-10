@@ -9,6 +9,7 @@ expr: '(' expr ')' # Paren
 	| ('+' | '-') expr # Unary
 	| expr op=('*' | '/') expr # Binary
 	| expr op=('+' | '-') expr # Binary
+	| <assoc=right> expr op=('+=' | '-=' | '*=' | '/=') expr # InPlace
 	| expr op=('<' | '>' | '==' | '<=' | '>=') expr # Binary
 	| <assoc=right> expr '?' expr ':' expr # Ternary
 	| expr '::' expr # While
