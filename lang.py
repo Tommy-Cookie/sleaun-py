@@ -12,11 +12,16 @@ add = lambda a, b: a + b
 sub = lambda a, b: a - b
 mul = lambda a, b: a * b
 truediv = lambda a, b: a / b
-less = lambda a, b: a < b
-greater = lambda a, b: a > b
-eq = lambda a, b: a == b
-lesseq = lambda a, b: a <= b
-greatereq = lambda a, b: a >= b
+less = lambda a, b: 1 if a < b else 0
+greater = lambda a, b: 1 if a > b else 0
+eq = lambda a, b: 1 if a == b else 0
+lesseq = lambda a, b: 1 if a <= b else 0
+greatereq = lambda a, b: 1 if a >= b else 0
+bitand = lambda a, b: a & b
+bitor = lambda a, b: a | b
+bitxor = lambda a, b: a ^ b
+andand = lambda a, b: a and b
+oror = lambda a, b: a or b
 
 BINOP_TABLE = {
 	"+": {
@@ -29,9 +34,10 @@ BINOP_TABLE = {
 		float: {int: sub, float: sub}
 	},
 	"*": {
-		int: {int: mul, float: mul},
+		int: {int: mul, float: mul, str: mul, list: mul},
 		float: {int: mul, float: mul},
-		str: {int: mul}
+		str: {int: mul},
+		list: {int: mul}
 	},
 	"/": {
 		int: {int: truediv, float: truediv},
@@ -56,8 +62,33 @@ BINOP_TABLE = {
 	">=": {
 		int: {int: greatereq, float: greatereq},
 		float: {int: greatereq, float: greatereq}
+	},
+	"&": {
+		int: {int: bitand}
+	},
+	"|": {
+		int: {int: bitor}
+	},
+	"^": {
+		int: {int: bitxor}
+	},
+	"&&": {
+		int: {int: andand, float: andand, str: andand, list: andand},
+		float: {int: andand, float: andand, str: andand, list: andand},
+		str: {int: andand, float: andand, str: andand, list: andand},
+		list: {int: andand, float: andand, str: andand, list: andand}
+	},
+	"||": {
+		int: {int: oror, float: oror, str: oror, list: oror},
+		float: {int: oror, float: oror, str: oror, list: oror},
+		str: {int: oror, float: oror, str: oror, list: oror},
+		list: {int: oror, float: oror, str: oror, list: oror}
 	}
 }
+
+
+class Unreachable(Exception):
+	...
 
 
 @dataclass
@@ -91,9 +122,13 @@ class Function:
 	sub_frames: list[dict]
 
 
+def UNREACHABLE():
+	raise Unreachable()
+
+
 class ExprExecuter(ExprVisitor):
 	def __init__(self, src: str):
-		self.frames: list[dict] = [{}, {"print": print, "true": True, "false": False, "null": None}]
+		self.frames: list[dict] = [{}, {"print": print, "true": 1, "false": 0, "null": None}]
 		self.src = src
 		self.call_stack: list[CallInfo] = []
 
@@ -166,18 +201,52 @@ class ExprExecuter(ExprVisitor):
 		if isinstance(ctx, ExprParser.IndexContext):
 			base = self.as_slot(ctx.expr(0))
 			index = self.visit(ctx.expr(1))
-			return Slot(
-				get = lambda: base.get()[index],
-				set = lambda v: base.get().__setitem__(index, v)
-			)
+
+			def _get():
+				con = base.get()
+				try:
+					return con[index]
+				except IndexError:
+					self.error(f"index {index} out of range {len(con)}", ctx)
+				except KeyError:
+					self.error(f"key '{index}' doesn't exist", ctx)
+				except TypeError:
+					self.error(f"cannot index {type(con)}", ctx)
+
+			def _set(v):
+				con = base.get()
+				try:
+					con[index] = v
+					return v
+				except IndexError:
+					self.error(f"index {index} out of range {len(con)}", ctx)
+				except TypeError:
+					self.error(f"cannot assign index {type(con)}", ctx)
+
+			return Slot(get=_get, set=_set)
 
 		if isinstance(ctx, ExprParser.AttrContext):
 			base = self.as_slot(ctx.expr())
 			attr = ctx.ID().getText()
-			return Slot(
-				get = lambda: base.get()[attr],
-				set = lambda v: base.get().__setitem__(attr, v)
-			)
+
+			def _get():
+				obj = base.get()
+				try:
+					return obj[attr]
+				except KeyError:
+					self.error(f"key '{index}' doesn't exist", ctx)
+				except TypeError:
+					self.error(f"cannot index {type(obj)}", ctx)
+
+			def _set(v):
+				obj = base.get()
+				try:
+					obj[attr] = v
+					return v
+				except TypeError:
+					self.error(f"cannot assign index {type(obj)}", ctx)
+
+			return Slot(get=_get, set=_set)
 
 		self.error(f"invalid target {ctx!r}", ctx)
 
@@ -229,7 +298,19 @@ class ExprExecuter(ExprVisitor):
 
 	def visitUnary(self, ctx):
 		v = self.visit(ctx.expr())
-		return -v if ctx.getChild(0).getText() == "-" else +v
+		op = ctx.op.text
+		if op == "+":
+			return +v
+		if op == "-":
+			return -v
+		if op == "~":
+			if v is not int:
+				self.error(f"cannot apply {op!r} to {v}")
+			return ~v
+		if op == "!":
+			return 1 if not v else 0
+
+		UNREACHABLE()
 
 
 	def visitBinary(self, ctx):

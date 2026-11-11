@@ -7,11 +7,14 @@ expr: '(' expr ')' # Paren
 	| expr '(' (expr (',' expr)*)? ')' # Call
 	| expr '[' expr ']' # Index
 	| expr '.' ID # Attr
-	| ('+' | '-') expr # Unary
+	| op=('+' | '-' | '~' | '!') expr # Unary
 	| expr '{' SEP* (arm (SEP+ arm)*) SEP* '}' # Match
 	| expr op=('*' | '/') expr # Binary
 	| expr op=('+' | '-') expr # Binary
-	| <assoc=right> expr op=('+=' | '-=' | '*=' | '/=') expr # InPlace
+	| expr op=('&' | '|' | '^') expr # Binary
+	| expr op='&&' expr # Binary
+	| expr op='||' expr # Binary
+	| <assoc=right> expr op=('+=' | '-=' | '*=' | '/=' | '&=' | '|=' | '^=' | '&&=' | '||=') expr # InPlace
 	| expr op=('<' | '>' | '==' | '<=' | '>=') expr # Binary
 	| <assoc=right> expr '?' expr ':' expr # Ternary
 	| expr '::' expr # While
