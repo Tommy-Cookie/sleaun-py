@@ -19,7 +19,7 @@ def generic_error(msg, poses, src: str):
 
 	lines = src.split("\n")
 	for p in poses:
-		conerr.print(f"  [red]at {p[0]}:{p[1]}[/red]")
+		conerr.print(f"  [red]at {p[2]}:{p[0]}:{p[1]}[/red]")
 		fmt, at = format_tab_ptr(lines[p[0] - 1], p[1] - 1)
 		conerr.print(fmt)
 		conerr.print(f"{" " * at}[red bold]^[/red bold]")

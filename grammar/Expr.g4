@@ -21,6 +21,8 @@ expr: '(' expr ')' # Paren
 	| <assoc=right> expr '::' expr # While
 	| <assoc=right> ID ':=' expr # Create
 	| <assoc=right> expr '=' expr # Assign
+	| 'use' ID ('.' ID)* # Use
+	| 'use' ID ('.' ID)* 'as' ID # UseWithBind
 	| 'break' expr? # Break
 	| 'continue' # Continue
 	| 'return' expr? # Return

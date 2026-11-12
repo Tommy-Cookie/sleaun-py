@@ -1,5 +1,6 @@
 
 import lngerr
+import os
 from antlr4 import *
 from antlr4.error.ErrorListener import *
 from ExprLexer import ExprLexer
@@ -7,6 +8,10 @@ from ExprParser import ExprParser
 from ExprVisitor import ExprVisitor
 from dataclasses import dataclass
 from typing import Callable, Any
+
+
+SLEA = ".slea"
+
 
 add = lambda a, b: a + b
 sub = lambda a, b: a - b
@@ -109,6 +114,7 @@ class Slot:
 class CallInfo:
 	line: int
 	col: int
+	file: str
 
 
 class BreakSignal(Exception):
@@ -135,16 +141,19 @@ def UNREACHABLE():
 
 
 class ExprExecuter(ExprVisitor):
-	def __init__(self, src: str):
-		self.frames: list[dict] = [{}, {"print": print, "true": 1, "false": 0, "null": None}]
+	def __init__(self, src: str, callstack, loading, cached, builtin, file):
+		self.frames: list[dict] = [{}, {"print": print, "true": 1, "false": 0, "null": None}] if builtin else [{}]
 		self.src = src
-		self.call_stack: list[CallInfo] = []
+		self.call_stack: list[CallInfo] = callstack
+		self.loading: list[str] = loading
+		self.cached: dict[str] = cached
+		self.file = file
 
 	def error(self, msg, ctx):
-		poses = [(ctx.start.line, ctx.start.column + 1)]
+		poses = [(ctx.start.line, ctx.start.column + 1, self.file)]
 
 		for c in self.call_stack[::-1]:
-			poses.append((c.line, c.col))
+			poses.append((c.line, c.col, c.file))
 
 		lngerr.generic_error(msg, poses, self.src)
 
@@ -293,12 +302,60 @@ class ExprExecuter(ExprVisitor):
 			return ctx.ID().getText()
 		return self.visit(ctx)
 
+	def solve_use(self, path: list[str], ctx):
+		name = path[-1]
+		rep = ".".join(path)
+
+		if rep in self.cached:
+			module = self.cached[rep]
+			return name, module
+
+		if rep in self.loading:
+			start = self.loading.index(rep)
+			chain = self.loading[start:] + [rep]
+			self.error(f"circular using: '{"' -> '".join(chain)}'", ctx)
+
+		path = "/".join(path) + SLEA
+		path = os.path.abspath(path)
+
+		self.loading.append(rep)
+		try:
+			with open(path, encoding="utf-8") as file:
+				src = file.read()
+
+			module = parse_and_execute_src(src, self.call_stack, self.loading, self.cached, False, rep)
+		except Exception as e:
+			self.error(f"error while loading module '{rep}': {e}", ctx)
+		finally:
+			self.loading.pop()
+
+		self.cached[rep] = module
+		return name, module
+
 
 	def visitProgram(self, ctx):
 		try:
 			return self.execute_batch(ctx.expr())
 		except BreakSignal, ContinueSignal, ReturnSignal:
 			self.error("caonnot break, continue, or return on top level", ctx)
+
+	def visitUse(self, ctx):
+		path = []
+		for id in ctx.ID():
+			path.append(id.getText())
+
+		name, module = self.solve_use(path, ctx)
+		self.create_frame_variable(name, module, ctx)
+
+	def visitUseWithBind(self, ctx):
+		path = []
+		ids = ctx.ID()
+		for id in ids[:-1]:
+			path.append(id.getText())
+
+		_, module = self.solve_use(path, ctx)
+		self.create_frame_variable(ids[-1].getText(), module, ctx)
+		# print(self.frames)
 
 
 	def visitParen(self, ctx):
@@ -433,7 +490,7 @@ class ExprExecuter(ExprVisitor):
 				self.error(f"{fn} requires {len(fn.args)} argument(s), got {len(args)} instead", ctx)
 
 			self.call_stack.append(CallInfo(
-				ctx.start.line, ctx.start.column + 1
+				ctx.start.line, ctx.start.column + 1, self.file
 			))
 			# aliasing istead of copying here, because
 			# step                                 self.frames   saved
@@ -508,7 +565,7 @@ class LangErrorListener(ErrorListener):
 		lngerr.generic_error(f"{msg}", [(line, column + 1)], self.src)
 
 
-def parse_and_execute_src(src: str):
+def parse_and_execute_src(src: str, callstack, loading, cached, builtin, file):
 	input_stream = InputStream(src)
 
 	lexer = ExprLexer(input_stream)
@@ -520,13 +577,11 @@ def parse_and_execute_src(src: str):
 	parser.addErrorListener(LangErrorListener(src))
 	
 	tree = parser.program()
-	ExprExecuter(src).visit(tree)
+	return ExprExecuter(src, callstack, loading, cached, builtin, file).visit(tree)
 
 
 def parse_and_execute(file_path):
-	input_stream = FileStream(file_path, encoding="utf-8")
-
 	with open(file_path, encoding="utf-8") as file:
 		src = file.read()
 
-	parse_and_execute_src(src)
+	return parse_and_execute_src(src, [], [], {}, True, file_path)
