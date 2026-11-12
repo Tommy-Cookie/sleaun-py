@@ -10,14 +10,15 @@ expr: '(' expr ')' # Paren
 	| op=('+' | '-' | '~' | '!') expr # Unary
 	| expr '{' SEP* (arm (SEP+ arm)*) SEP* '}' # Match
 	| expr op=('*' | '/') expr # Binary
+	| expr op=('<<' | '>>') expr # Binary
 	| expr op=('+' | '-') expr # Binary
 	| expr op=('&' | '|' | '^') expr # Binary
 	| expr op='&&' expr # Binary
 	| expr op='||' expr # Binary
-	| <assoc=right> expr op=('+=' | '-=' | '*=' | '/=' | '&=' | '|=' | '^=' | '&&=' | '||=') expr # InPlace
+	| <assoc=right> expr op=('+=' | '-=' | '*=' | '/=' | '&=' | '|=' | '^=' | '&&=' | '||=' | '<<=' | '>>=') expr # InPlace
 	| expr op=('<' | '>' | '==' | '<=' | '>=') expr # Binary
 	| <assoc=right> expr '?' expr ':' expr # Ternary
-	| expr '::' expr # While
+	| <assoc=right> expr '::' expr # While
 	| <assoc=right> ID ':=' expr # Create
 	| <assoc=right> expr '=' expr # Assign
 	| 'break' expr? # Break

@@ -22,6 +22,8 @@ bitor = lambda a, b: a | b
 bitxor = lambda a, b: a ^ b
 andand = lambda a, b: a and b
 oror = lambda a, b: a or b
+lsh = lambda a, b: a << b
+rsh = lambda a, b: a >> b
 
 BINOP_TABLE = {
 	"+": {
@@ -83,6 +85,12 @@ BINOP_TABLE = {
 		float: {int: oror, float: oror, str: oror, list: oror},
 		str: {int: oror, float: oror, str: oror, list: oror},
 		list: {int: oror, float: oror, str: oror, list: oror}
+	},
+	"<<": {
+		int: {int: lsh}
+	},
+	">>": {
+		int: {int: rsh}
 	}
 }
 
