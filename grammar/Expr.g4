@@ -1,14 +1,14 @@
 
 grammar Expr;
 
-program: SEP* (expr (SEP+ expr)*)? SEP* EOF;
+program: (expr ';')* EOF;
 
 expr: '(' expr ')' # Paren
 	| expr '(' (expr (',' expr)*)? ')' # Call
 	| expr '[' expr ']' # Index
 	| expr '.' ID # Attr
 	| op=('+' | '-' | '~' | '!') expr # Unary
-	| expr '{' SEP* (arm (SEP+ arm)*) SEP* '}' # Match
+	| expr '{' (arm ',')+ '}' # Match
 	| expr op=('*' | '/') expr # Binary
 	| expr op=('<<' | '>>') expr # Binary
 	| expr op=('+' | '-') expr # Binary
@@ -34,7 +34,7 @@ atom: ID # Id
 	| INT # Int
 	| STRING # String
 	| '[' (expr (',' expr )*)? ']' # Array
-	| '{' SEP* (expr (SEP+ expr)*)? SEP* '}' # Block
+	| '{' (expr ';')* '}' # Block
 	| '{' (entry (',' entry )*)? ','? '}' # Map
 	| <assoc=right> ID '(' (ID (',' ID)*)? ')' '=>' expr # NamedFn
 	| <assoc=right> '(' (ID (',' ID)*)? ')' '=>' expr # AnonyFn
@@ -47,9 +47,6 @@ INT: [0-9]+;
 FLOAT: [0-9]+ '.' [0-9]+;
 STRING: '"' .*? '"';
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
-SEP: NL | ';';
-NL: '\r\n' | '\n';
 
-WS: [ \t\r]+ -> skip;
+WS: [ \t\r\n]+ -> skip;
 COM: ('//' ~[\n]* | '/*' .*? '*/') -> skip;
-ESNL: '\\' WS* NL -> skip;

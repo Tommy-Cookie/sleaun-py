@@ -566,11 +566,12 @@ class ExprExecuter(ExprVisitor):
 
 
 class LangErrorListener(ErrorListener):
-	def __init__(self, src: str):
+	def __init__(self, src: str, file: str):
 		self.src = src
+		self.file = file
 
 	def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e):
-		lngerr.generic_error(f"{msg}", [(line, column + 1)], self.src)
+		lngerr.generic_error(f"{msg}", [(line, column + 1, self.file)], self.src)
 
 
 def parse_and_execute_src(src: str, callstack, loading, cached, builtin, file):
@@ -578,11 +579,11 @@ def parse_and_execute_src(src: str, callstack, loading, cached, builtin, file):
 
 	lexer = ExprLexer(input_stream)
 	lexer.removeErrorListeners()
-	lexer.addErrorListener(LangErrorListener(src))
+	lexer.addErrorListener(LangErrorListener(src, file))
 	
 	parser = ExprParser(CommonTokenStream(lexer))
 	parser.removeErrorListeners()
-	parser.addErrorListener(LangErrorListener(src))
+	parser.addErrorListener(LangErrorListener(src, file))
 	
 	tree = parser.program()
 	return ExprExecuter(src, callstack, loading, cached, builtin, file).visit(tree)
