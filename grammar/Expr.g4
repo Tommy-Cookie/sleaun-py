@@ -1,7 +1,18 @@
 
 grammar Expr;
 
-program: (expr ';')* EOF;
+@parser::members {
+def _block_like(self, ctx):
+	if isinstance(ctx, self.WhileContext): return True
+	if isinstance(ctx, self.MatchContext): return True
+	if isinstance(ctx, self.SingleContext):
+		atom = ctx.atom()
+		if isinstance(atom, self.BlockContext): return True
+		if isinstance(atom, self.NamedFnContext): return True
+	return False
+}
+
+program: (e=expr (';' | {self._block_like($e.ctx)}?))* EOF;
 
 expr: '(' expr ')' # Paren
 	| expr '(' (expr (',' expr)*)? ')' # Call
@@ -29,15 +40,15 @@ expr: '(' expr ')' # Paren
 	| atom # Single
 	;
 
-atom: ID # Id
+atom: <assoc=right> ID '(' (ID (',' ID)*)? ')' '=>' expr # NamedFn
+	| <assoc=right> '(' (ID (',' ID)*)? ')' '=>' expr # AnonyFn
+	| ID # Id
 	| FLOAT # Float
 	| INT # Int
 	| STRING # String
 	| '[' (expr (',' expr )*)? ']' # Array
-	| '{' (expr ';')* '}' # Block
+	| '{' (e=expr (';' | {self._block_like($e.ctx)}?))* '}' # Block
 	| '{' (entry (',' entry )*)? ','? '}' # Map
-	| <assoc=right> ID '(' (ID (',' ID)*)? ')' '=>' expr # NamedFn
-	| <assoc=right> '(' (ID (',' ID)*)? ')' '=>' expr # AnonyFn
 	;
 
 arm: atom '->' expr;
