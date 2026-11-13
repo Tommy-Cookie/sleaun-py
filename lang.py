@@ -128,12 +128,17 @@ class ReturnSignal(Exception):
 	def __init__(self, value):
 		self.value = value
 
+class MismatchArgumentCount(Exception):
+	def __init__(self, num_args):
+		self.num_args = num_args
+
 
 @dataclass
 class Function:
 	args: list[str]
 	body: Any
 	sub_frames: list[dict]
+	name: str = "<anonymous>"
 
 
 def UNREACHABLE():
@@ -464,7 +469,7 @@ class ExprExecuter(ExprVisitor):
 		body = ctx.expr()
 
 		sub_frames = self.frames.copy() # shallow copy: captures the frames when created
-		fn = Function(args, body, sub_frames)
+		fn = Function(args, body, sub_frames, name)
 
 		self.create_frame_variable(name, fn, ctx)
 		return fn
@@ -483,11 +488,14 @@ class ExprExecuter(ExprVisitor):
 		args = [self.visit(t) for t in ctx.expr()[1:]]
 
 		if callable(fn):
-			return fn(*args)
+			try:
+				return fn(*args)
+			except MismatchArgumentCount as e:
+				self.error(f"<builtin> requires {len(e.num_args)} argument(s), got {len(args)} instead", ctx)
 
 		if isinstance(fn, Function):
 			if len(args) != len(fn.args):
-				self.error(f"{fn} requires {len(fn.args)} argument(s), got {len(args)} instead", ctx)
+				self.error(f"{fn.name} requires {len(fn.args)} argument(s), got {len(args)} instead", ctx)
 
 			self.call_stack.append(CallInfo(
 				ctx.start.line, ctx.start.column + 1, self.file
