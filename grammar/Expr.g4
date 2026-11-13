@@ -5,6 +5,7 @@ grammar Expr;
 def _block_like(self, ctx):
 	if isinstance(ctx, self.WhileContext): return True
 	if isinstance(ctx, self.MatchContext): return True
+	if isinstance(ctx, self.TernaryContext): return True
 	if isinstance(ctx, self.SingleContext):
 		atom = ctx.atom()
 		if isinstance(atom, self.BlockContext): return True
