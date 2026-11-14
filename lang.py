@@ -139,6 +139,11 @@ class MismatchArgumentCount(Exception):
 
 
 @dataclass
+class WantsInterp:
+	fn: Callable
+
+
+@dataclass
 class Function:
 	args: list[str]
 	body: Any
@@ -494,13 +499,21 @@ class ExprExecuter(ExprVisitor):
 
 	def visitCall(self, ctx):
 		fn = self.visit(ctx.expr(0))
+		interp = False
 		args = [self.visit(t) for t in ctx.expr()[1:]]
+
+		if isinstance(fn, WantsInterp):
+			fn = fn.fn
+			interp = True
 
 		if callable(fn):
 			try:
-				return fn(*args)
+				if interp: return fn(self, *args)
+				else: return fn(*args)
 			except MismatchArgumentCount as e:
 				self.error(f"{fn.__name__} requires {len(e.num_args)} argument(s), got {len(args)} instead", ctx)
+			except Exception as e:
+				self.error(str(e))
 
 		if isinstance(fn, Function):
 			if len(args) != len(fn.args):
