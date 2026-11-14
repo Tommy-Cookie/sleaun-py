@@ -603,6 +603,7 @@ BYTE_ASSIGN_IDX = 8
 BYTE_INDEX = 9
 BYTE_LOADS = 10
 BYTE_LOADF = 11
+BYTE_MAKE_ARRAY = 12
 
 
 def print_bytecode(code: list[tuple]):
@@ -618,7 +619,8 @@ def print_bytecode(code: list[tuple]):
 		BYTE_ASSIGN_IDX: "assign_idx",
 		BYTE_INDEX: "index",
 		BYTE_LOADS: "loads",
-		BYTE_LOADF: "loadf"
+		BYTE_LOADF: "loadf",
+		BYTE_MAKE_ARRAY: "make_array"
 	}
 	for op, pa in code:
 		print(f"{BYTE_TO_STRING[op]:<15}{repr(pa) if pa is not None else ""}")
@@ -754,6 +756,12 @@ class LangVM:
 					self.error(f"cannot assign index {type(target)}")
 				self.push(value)
 
+			elif op == BYTE_MAKE_ARRAY:
+				array = []
+				for i in range(param):
+					array.insert(0, self.pop())
+				self.push(array)
+
 			else:
 				UNREACHABLE()
 
@@ -845,6 +853,10 @@ class Compiler(ExprVisitor):
 	def visitFloat(self, ctx):
 		value = float(ctx.FLOAT().getText())
 		self.emit(BYTE_LOADF, value)
+
+	def visitArray(self, ctx):
+		vals = [self.visit(e) for e in ctx.expr()]
+		self.emit(BYTE_MAKE_ARRAY, len(vals))
 
 
 
