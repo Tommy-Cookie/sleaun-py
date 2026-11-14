@@ -592,11 +592,43 @@ class ExprExecuter(ExprVisitor):
 
 
 
+Opcode = tuple
+BYTE_BINARY = (0, "binary")
+BYTE_LOADI = (1, "loadi")
+BYTE_LOAD = (2, "load")
+BYTE_CALL = (3, "call")
+
+
 class Compiler(ExprVisitor):
-	...
+	def emit(self, opcode: Opcode, param: Any = None):
+		print(f"{opcode[1]}\t{param}")
 
 
+	def visitBinary(self, ctx):
+		op = ctx.op.text
+		self.visit(ctx.expr(0))
+		self.visit(ctx.expr(1))
+		self.emit(BYTE_BINARY, op)
 
+
+	def visitCall(self, ctx):
+		self.visit(ctx.expr(0))
+		args = [self.visit(t) for t in ctx.expr()[1:]]
+		self.emit(BYTE_CALL, len(args))
+
+
+	def visitSingle(self, ctx):
+		self.visit(ctx.atom())
+
+	def visitInt(self, ctx):
+		value = int(ctx.INT().getText())
+		self.emit(BYTE_LOADI, value)
+
+	def visitId(self, ctx):
+		self.emit(BYTE_LOAD, ctx.ID().getText())
+
+
+IS_COMPILE = False
 
 class LangErrorListener(ErrorListener):
 	def __init__(self, file: str, srcs):
@@ -615,6 +647,8 @@ def module_name(file_path: str):
 
 
 def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs, exts):
+	global IS_COMPILE
+
 	input_stream = InputStream(src)
 
 	lexer = ExprLexer(input_stream)
@@ -626,7 +660,11 @@ def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs,
 	parser.addErrorListener(LangErrorListener(file, srcs))
 	
 	tree = parser.program()
-	return ExprExecuter(callstack, loading, cached, file, srcs, exts).visit(tree)
+	if IS_COMPILE:
+		IS_COMPILE = False
+		return Compiler().visit(tree)
+	else:
+		return ExprExecuter(callstack, loading, cached, file, srcs, exts).visit(tree)
 
 
 def parse_and_execute(file_path, extensions = None):
