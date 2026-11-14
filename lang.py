@@ -574,19 +574,21 @@ class LangErrorListener(ErrorListener):
 		lngerr.generic_error(f"{msg}", [(line, column + 1, self.file)], self.src)
 
 
-def parse_and_execute_src(src: str, callstack, loading, cached, builtin, file):
+def parse_and_execute_src(src: str, callstack, loading, cached, builtin, file: str):
+	rep = file.split(".")[0].replace("/", ".").replace("\\", ".")
+
 	input_stream = InputStream(src)
 
 	lexer = ExprLexer(input_stream)
 	lexer.removeErrorListeners()
-	lexer.addErrorListener(LangErrorListener(src, file))
+	lexer.addErrorListener(LangErrorListener(src, rep))
 	
 	parser = ExprParser(CommonTokenStream(lexer))
 	parser.removeErrorListeners()
-	parser.addErrorListener(LangErrorListener(src, file))
+	parser.addErrorListener(LangErrorListener(src, rep))
 	
 	tree = parser.program()
-	return ExprExecuter(src, callstack, loading, cached, builtin, file).visit(tree)
+	return ExprExecuter(src, callstack, loading, cached, builtin, rep).visit(tree)
 
 
 def parse_and_execute(file_path):
