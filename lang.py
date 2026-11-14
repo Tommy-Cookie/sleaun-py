@@ -604,6 +604,7 @@ BYTE_INDEX = 9
 BYTE_LOADS = 10
 BYTE_LOADF = 11
 BYTE_MAKE_ARRAY = 12
+BYTE_MAKE_MAP = 13
 
 
 def print_bytecode(code: list[tuple]):
@@ -620,7 +621,8 @@ def print_bytecode(code: list[tuple]):
 		BYTE_INDEX: "index",
 		BYTE_LOADS: "loads",
 		BYTE_LOADF: "loadf",
-		BYTE_MAKE_ARRAY: "make_array"
+		BYTE_MAKE_ARRAY: "make_array",
+		BYTE_MAKE_MAP: "make_map"
 	}
 	for op, pa in code:
 		print(f"{BYTE_TO_STRING[op]:<15}{repr(pa) if pa is not None else ""}")
@@ -637,10 +639,10 @@ class LangVM:
 		self.stack = []
 
 	def error(self, msg):
-		poses = [(self.pc, self.pc, self.file)]
+		poses = [(self.pc, self.pc, "<>")]
 		for c in self.call_stack[::-1]:
 			poses.append((c.line, c.col, c.file))
-		lngerr.generic_error(msg, poses, self.srcs)
+		lngerr.generic_error(msg, poses, {})
 
 	def set_frame_variable(self, name, value):
 		for f in self.frames:
@@ -708,6 +710,10 @@ class LangVM:
 				self.push(self.get_frame_variable(param))
 			elif op == BYTE_LOADI:
 				self.push(param)
+			elif op == BYTE_LOADF:
+				self.push(param)
+			elif op == BYTE_LOADS:
+				self.push(param)
 			
 			elif op == BYTE_BINARY:
 				rhs = self.pop()
@@ -761,6 +767,13 @@ class LangVM:
 				for i in range(param):
 					array.insert(0, self.pop())
 				self.push(array)
+			elif op == BYTE_MAKE_MAP:
+				mp = {}
+				for i in range(param):
+					val = self.pop()
+					key = self.pop()
+					mp[key] = val
+				self.push(mp)
 
 			else:
 				UNREACHABLE()
@@ -770,27 +783,33 @@ class Compiler(ExprVisitor):
 	def __init__(self):
 		self.code = []
 
-	def emit(self, opcode: Opcode, param: Any = None):
+	def emit(self, ctx, opcode: Opcode, param: Any = None):
 		# print(f"{opcode[1]}\t{param}")
 		self.code.append((opcode, param))
+
+	def solve_entry(self, ctx):
+		if isinstance(ctx, ExprParser.IdContext):
+			self.emit(ctx, BYTE_LOADS, ctx.ID().getText())
+		else:
+			self.visit(ctx)
 
 
 	def visitProgram(self, ctx):
 		for e in ctx.expr():
 			self.visit(e)
-			self.emit(BYTE_POP)
-		self.emit(BYTE_HALT)
+			self.emit(ctx, BYTE_POP)
+		self.emit(ctx, BYTE_HALT)
 
 	def visitBinary(self, ctx):
 		op = ctx.op.text
 		self.visit(ctx.expr(0))
 		self.visit(ctx.expr(1))
-		self.emit(BYTE_BINARY, op)
+		self.emit(ctx, BYTE_BINARY, op)
 
 
 	def visitCreate(self, ctx):
 		self.visit(ctx.expr())
-		self.emit(BYTE_CREATE, ctx.ID().getText())
+		self.emit(ctx, BYTE_CREATE, ctx.ID().getText())
 
 	def visitAssign(self, ctx):
 		value = ctx.expr(1)
@@ -800,40 +819,39 @@ class Compiler(ExprVisitor):
 			atom = expr.atom()
 			if isinstance(atom, ExprParser.IdContext):
 				self.visit(value)
-				self.emit(BYTE_ASSIGN_VAR, atom.ID().getText())
+				self.emit(ctx, BYTE_ASSIGN_VAR, atom.ID().getText())
 
 		elif isinstance(expr, ExprParser.IndexContext):
 			self.visit(expr.expr(0)) # container
 			self.visit(expr.expr(1)) # index
 			self.visit(value)
-			self.emit(BYTE_ASSIGN_IDX)
+			self.emit(ctx, BYTE_ASSIGN_IDX)
 
 		elif isinstance(expr, ExprParser.AttrContext):
 			self.visit(expr.expr()) # container
-			self.visit(expr.ID().getText()) # attr
+			self.emit(ctx, BYTE_LOADS, expr.ID().getText()) # attr
 			self.visit(value)
-			self.emit(BYTE_ASSIGN_IDX)
+			self.emit(ctx, BYTE_ASSIGN_IDX)
 
 		else:
 			UNREACHABLE()
 
 
-
 	def visitCall(self, ctx):
 		self.visit(ctx.expr(0))
 		args = [self.visit(t) for t in ctx.expr()[1:]]
-		self.emit(BYTE_CALL, len(args))
+		self.emit(ctx, BYTE_CALL, len(args))
 
 
 	def visitIndex(self, ctx):
 		self.visit(ctx.expr(0)) # container
 		self.visit(ctx.expr(1)) # index
-		self.emit(BYTE_INDEX)
+		self.emit(ctx, BYTE_INDEX)
 
 	def visitAttr(self, ctx):
 		self.visit(ctx.expr()) # container
 		self.visit(ctx.ID().getText()) # attr
-		self.emit(BYTE_INDEX)
+		self.emit(ctx, BYTE_INDEX)
 
 
 	def visitSingle(self, ctx):
@@ -841,22 +859,30 @@ class Compiler(ExprVisitor):
 
 	def visitInt(self, ctx):
 		value = int(ctx.INT().getText())
-		self.emit(BYTE_LOADI, value)
+		self.emit(ctx, BYTE_LOADI, value)
 
 	def visitId(self, ctx):
-		self.emit(BYTE_LOAD, ctx.ID().getText())
+		self.emit(ctx, BYTE_LOAD, ctx.ID().getText())
 
 	def visitString(self, ctx):
 		value = ctx.STRING().getText()
-		self.emit(BYTE_LOADS, value)
+		self.emit(ctx, BYTE_LOADS, value)
 
 	def visitFloat(self, ctx):
 		value = float(ctx.FLOAT().getText())
-		self.emit(BYTE_LOADF, value)
+		self.emit(ctx, BYTE_LOADF, value)
 
 	def visitArray(self, ctx):
 		vals = [self.visit(e) for e in ctx.expr()]
-		self.emit(BYTE_MAKE_ARRAY, len(vals))
+		self.emit(ctx, BYTE_MAKE_ARRAY, len(vals))
+
+	def visitMap(self, ctx):
+		n = 0
+		for entry in ctx.entry():
+			self.solve_entry(entry.atom())
+			self.visit(entry.expr())
+			n += 1
+		self.emit(ctx, BYTE_MAKE_MAP, n)
 
 
 
