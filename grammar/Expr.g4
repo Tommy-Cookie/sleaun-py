@@ -3,14 +3,9 @@ grammar Expr;
 
 @parser::members {
 def _block_like(self, ctx):
-	if isinstance(ctx, self.WhileContext): return True
-	if isinstance(ctx, self.MatchContext): return True
-	if isinstance(ctx, self.TernaryContext): return True
-	if isinstance(ctx, self.SingleContext):
-		atom = ctx.atom()
-		if isinstance(atom, self.BlockContext): return True
-		if isinstance(atom, self.NamedFnContext): return True
-	return False
+	if ctx.stop.type == self.T__12: return True # LBRACE
+	la = self._input.LA(1)
+	return la == Token.EOF or la == self.T__12
 }
 
 program: (e=expr (';' | {self._block_like($e.ctx)}?))* EOF;
