@@ -15,7 +15,7 @@ expr: '(' expr ')' # Paren
 	| expr '[' expr ']' # Index
 	| expr '.' ID # Attr
 	| op=('+' | '-' | '~' | '!') expr # Unary
-	| expr '{' (arm ',')+ '}' # Match
+	| expr '{' (arm (',' arm)*) '}' # Match
 	| expr op=('*' | '/') expr # Binary
 	| expr op=('<<' | '>>') expr # Binary
 	| expr op=('+' | '-') expr # Binary
