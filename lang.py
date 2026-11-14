@@ -138,6 +138,7 @@ class Function:
 	args: list[str]
 	body: Any
 	sub_frames: list[dict]
+	file: str
 	name: str = "<anonymous>"
 
 
@@ -146,13 +147,13 @@ def UNREACHABLE():
 
 
 class ExprExecuter(ExprVisitor):
-	def __init__(self, src: str, callstack, loading, cached, builtin, file):
-		self.frames: list[dict] = [{}, {"print": print, "true": 1, "false": 0, "null": None}] if builtin else [{}]
-		self.src = src
+	def __init__(self, callstack, loading, cached, file, srcs: dict):
+		self.frames: list[dict] = [{}, {"print": print, "true": 1, "false": 0, "null": None}]
 		self.call_stack: list[CallInfo] = callstack
 		self.loading: list[str] = loading
 		self.cached: dict[str] = cached
 		self.file = file
+		self.srcs = srcs
 
 	def error(self, msg, ctx):
 		poses = [(ctx.start.line, ctx.start.column + 1, self.file)]
@@ -160,7 +161,7 @@ class ExprExecuter(ExprVisitor):
 		for c in self.call_stack[::-1]:
 			poses.append((c.line, c.col, c.file))
 
-		lngerr.generic_error(msg, poses, self.src)
+		lngerr.generic_error(msg, poses, self.srcs)
 
 	def set_frame_variable(self, name, value, ctx):
 		for f in self.frames:
@@ -256,7 +257,7 @@ class ExprExecuter(ExprVisitor):
 				try:
 					return obj[attr]
 				except KeyError:
-					self.error(f"key '{index}' doesn't exist", ctx)
+					self.error(f"key '{attr}' doesn't exist", ctx)
 				except TypeError:
 					self.error(f"cannot index {type(obj)}", ctx)
 
@@ -328,7 +329,8 @@ class ExprExecuter(ExprVisitor):
 			with open(path, encoding="utf-8") as file:
 				src = file.read()
 
-			module = parse_and_execute_src(src, self.call_stack, self.loading, self.cached, False, rep)
+			self.srcs[rep] = src
+			module = parse_and_execute_src(src, self.call_stack, self.loading, self.cached, rep, self.srcs)
 		except Exception as e:
 			self.error(f"error while loading module '{rep}': {e}", ctx)
 		finally:
@@ -374,7 +376,7 @@ class ExprExecuter(ExprVisitor):
 		if op == "-":
 			return -v
 		if op == "~":
-			if v is not int:
+			if type(v) is not int:
 				self.error(f"cannot apply {op!r} to {v}")
 			return ~v
 		if op == "!":
@@ -469,7 +471,7 @@ class ExprExecuter(ExprVisitor):
 		body = ctx.expr()
 
 		sub_frames = self.frames.copy() # shallow copy: captures the frames when created
-		fn = Function(args, body, sub_frames, name)
+		fn = Function(args, body, sub_frames, self.file, name)
 
 		self.create_frame_variable(name, fn, ctx)
 		return fn
@@ -479,7 +481,7 @@ class ExprExecuter(ExprVisitor):
 		body = ctx.expr()
 
 		sub_frames = self.frames.copy() # shallow copy: captures the frames when created
-		fn = Function(args, body, sub_frames)
+		fn = Function(args, body, sub_frames, self.file)
 
 		return fn
 
@@ -508,14 +510,17 @@ class ExprExecuter(ExprVisitor):
 			# run body                             L2 (mutated)  L1 (untouched)
 			# restore frames                       L1            L1
 			saved = self.frames
+			saved_file = self.file
 			
 			self.frames = [dict(zip(fn.args, args))] + fn.sub_frames.copy() # rebind
+			self.file = fn.file
 			try:
 				return self.visit(fn.body)
 			except ReturnSignal as e:
 				return e.value
 			finally:
 				self.frames = saved
+				self.file = saved_file
 				self.call_stack.pop()
 
 		self.error(f"{type(fn)} is not callable", ctx)
@@ -566,33 +571,39 @@ class ExprExecuter(ExprVisitor):
 
 
 class LangErrorListener(ErrorListener):
-	def __init__(self, src: str, file: str):
-		self.src = src
+	def __init__(self, file: str, srcs):
 		self.file = file
+		self.srcs = srcs
 
 	def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e):
-		lngerr.generic_error(f"{msg}", [(line, column + 1, self.file)], self.src)
+		lngerr.generic_error(f"{msg}", [(line, column + 1, self.file)], self.srcs)
 
 
-def parse_and_execute_src(src: str, callstack, loading, cached, builtin, file: str):
-	rep = file.split(".")[0].replace("/", ".").replace("\\", ".")
+def module_name(file_path: str):
+	norm = os.path.normpath(file_path)
+	base = os.path.splitext(norm)[0]
+	base = base.lstrip("./\\")
+	return base.replace("/", ".").replace("\\", ".")
 
+
+def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs):
 	input_stream = InputStream(src)
 
 	lexer = ExprLexer(input_stream)
 	lexer.removeErrorListeners()
-	lexer.addErrorListener(LangErrorListener(src, rep))
+	lexer.addErrorListener(LangErrorListener(file, srcs))
 	
 	parser = ExprParser(CommonTokenStream(lexer))
 	parser.removeErrorListeners()
-	parser.addErrorListener(LangErrorListener(src, rep))
+	parser.addErrorListener(LangErrorListener(file, srcs))
 	
 	tree = parser.program()
-	return ExprExecuter(src, callstack, loading, cached, builtin, rep).visit(tree)
+	return ExprExecuter(callstack, loading, cached, file, srcs).visit(tree)
 
 
 def parse_and_execute(file_path):
 	with open(file_path, encoding="utf-8") as file:
 		src = file.read()
 
-	return parse_and_execute_src(src, [], [], {}, True, file_path)
+	rep = module_name(file_path)
+	return parse_and_execute_src(src, [], [], {}, rep, {rep: src})
