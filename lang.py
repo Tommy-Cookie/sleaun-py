@@ -11,6 +11,11 @@ from typing import Callable, Any
 
 
 SLEAUN = ".slea"
+"""
+EXTENSION CONVENTION
+[{namespace: {name: callable}}, ...]
+list of extensions, extensions have its own namespace
+"""
 
 
 add = lambda a, b: a + b
@@ -147,8 +152,8 @@ def UNREACHABLE():
 
 
 class ExprExecuter(ExprVisitor):
-	def __init__(self, callstack, loading, cached, file, srcs: dict):
-		self.frames: list[dict] = [{}, {
+	def __init__(self, callstack, loading, cached, file, srcs: dict, exts: list):
+		self.frames: list[dict] = [{}, *exts, {
 			"input": input, "print": print, "true": 1, "false": 0, "null": None
 		}]
 		self.call_stack: list[CallInfo] = callstack
@@ -332,7 +337,7 @@ class ExprExecuter(ExprVisitor):
 				src = file.read()
 
 			self.srcs[rep] = src
-			module = parse_and_execute_src(src, self.call_stack, self.loading, self.cached, rep, self.srcs)
+			module = parse_and_execute_src(src, self.call_stack, self.loading, self.cached, rep, self.srcs, self.exts)
 		except Exception as e:
 			self.error(f"error while loading module '{rep}': {e}", ctx)
 		finally:
@@ -495,7 +500,7 @@ class ExprExecuter(ExprVisitor):
 			try:
 				return fn(*args)
 			except MismatchArgumentCount as e:
-				self.error(f"<builtin> requires {len(e.num_args)} argument(s), got {len(args)} instead", ctx)
+				self.error(f"{fn.__name__} requires {len(e.num_args)} argument(s), got {len(args)} instead", ctx)
 
 		if isinstance(fn, Function):
 			if len(args) != len(fn.args):
@@ -596,7 +601,7 @@ def module_name(file_path: str):
 	return base.replace("/", ".").replace("\\", ".")
 
 
-def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs):
+def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs, exts):
 	input_stream = InputStream(src)
 
 	lexer = ExprLexer(input_stream)
@@ -608,12 +613,12 @@ def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs)
 	parser.addErrorListener(LangErrorListener(file, srcs))
 	
 	tree = parser.program()
-	return ExprExecuter(callstack, loading, cached, file, srcs).visit(tree)
+	return ExprExecuter(callstack, loading, cached, file, srcs, exts).visit(tree)
 
 
-def parse_and_execute(file_path):
+def parse_and_execute(file_path, extensions = None):
 	with open(file_path, encoding="utf-8") as file:
 		src = file.read()
 
 	rep = module_name(file_path)
-	return parse_and_execute_src(src, [], [], {}, rep, {rep: src})
+	return parse_and_execute_src(src, [], [], {}, rep, {rep: src}, extensions if extensions is not None else [])
