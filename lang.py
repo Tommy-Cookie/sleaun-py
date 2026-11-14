@@ -599,6 +599,9 @@ BYTE_HALT = 4
 BYTE_POP = 5
 BYTE_CREATE = 6
 BYTE_ASSIGN_VAR = 7
+BYTE_ASSIGN_IDX = 8
+BYTE_INDEX = 9
+BYTE_LOADS = 10
 
 
 def print_bytecode(code: list[tuple]):
@@ -610,7 +613,10 @@ def print_bytecode(code: list[tuple]):
 		BYTE_HALT: "halt",
 		BYTE_POP: "pop",
 		BYTE_CREATE: "create",
-		BYTE_ASSIGN_VAR: "assign_var"
+		BYTE_ASSIGN_VAR: "assign_var",
+		BYTE_ASSIGN_IDX: "assign_idx",
+		BYTE_INDEX: "index",
+		BYTE_LOADS: "loads"
 	}
 	for op, pa in code:
 		print(f"{BYTE_TO_STRING[op]:<15}{repr(pa) if pa is not None else ""}")
@@ -618,7 +624,7 @@ def print_bytecode(code: list[tuple]):
 
 class LangVM:
 	def __init__(self, code):
-		self.frames: list[dict] = [{}, {
+		self.frames: list[dict] = [{"a": [1]}, {
 			"input": input, "print": print, "true": 1, "false": 0, "null": None
 		}]
 		self.call_stack: list[CallInfo] = []
@@ -705,6 +711,17 @@ class LangVM:
 				value = self.top()
 				self.set_frame_variable(param, value)
 
+			elif op == BYTE_INDEX:
+				index = self.pop()
+				target = self.pop()
+				self.push(target[index])
+			elif op == BYTE_ASSIGN_IDX:
+				value = self.pop()
+				index = self.pop()
+				target = self.pop()
+				target[index] = value
+				self.push(value)
+
 			else:
 				UNREACHABLE()
 
@@ -736,21 +753,47 @@ class Compiler(ExprVisitor):
 		self.emit(BYTE_CREATE, ctx.ID().getText())
 
 	def visitAssign(self, ctx):
-		self.visit(ctx.expr(1))
-
+		value = ctx.expr(1)
 		expr = ctx.expr(0)
+
 		if isinstance(expr, ExprParser.SingleContext):
 			atom = expr.atom()
 			if isinstance(atom, ExprParser.IdContext):
+				self.visit(value)
 				self.emit(BYTE_ASSIGN_VAR, atom.ID().getText())
+
+		elif isinstance(expr, ExprParser.IndexContext):
+			self.visit(expr.expr(0)) # container
+			self.visit(expr.expr(1)) # index
+			self.visit(value)
+			self.emit(BYTE_ASSIGN_IDX)
+
+		elif isinstance(expr, ExprParser.AttrContext):
+			self.visit(expr.expr()) # container
+			self.visit(expr.ID().getText()) # attr
+			self.visit(value)
+			self.emit(BYTE_ASSIGN_IDX)
+
 		else:
 			UNREACHABLE()
+
 
 
 	def visitCall(self, ctx):
 		self.visit(ctx.expr(0))
 		args = [self.visit(t) for t in ctx.expr()[1:]]
 		self.emit(BYTE_CALL, len(args))
+
+
+	def visitIndex(self, ctx):
+		self.visit(ctx.expr(0)) # container
+		self.visit(ctx.expr(1)) # index
+		self.emit(BYTE_INDEX)
+
+	def visitAttr(self, ctx):
+		self.visit(ctx.expr()) # container
+		self.visit(ctx.ID().getText()) # attr
+		self.emit(BYTE_INDEX)
 
 
 	def visitSingle(self, ctx):
@@ -762,6 +805,10 @@ class Compiler(ExprVisitor):
 
 	def visitId(self, ctx):
 		self.emit(BYTE_LOAD, ctx.ID().getText())
+
+	def visitString(self, ctx):
+		value = ctx.STRING().getText()
+		self.emit(BYTE_LOADS, value)
 
 
 
