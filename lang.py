@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Callable, Any
 
 
-SLEA = ".slea"
+SLEAUN = ".slea"
 
 
 add = lambda a, b: a + b
@@ -320,7 +320,7 @@ class ExprExecuter(ExprVisitor):
 			chain = self.loading[start:] + [rep]
 			self.error(f"circular using: '{"' -> '".join(chain)}'", ctx)
 
-		path = "/".join(path) + SLEA
+		path = "/".join(path) + SLEAUN
 		path = os.path.abspath(path)
 
 		self.loading.append(rep)
