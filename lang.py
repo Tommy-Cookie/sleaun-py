@@ -169,10 +169,8 @@ class ExprExecuter(ExprVisitor):
 
 	def error(self, msg, ctx):
 		poses = [(ctx.start.line, ctx.start.column + 1, self.file)]
-
 		for c in self.call_stack[::-1]:
 			poses.append((c.line, c.col, c.file))
-
 		lngerr.generic_error(msg, poses, self.srcs)
 
 	def set_frame_variable(self, name, value, ctx):
@@ -592,17 +590,123 @@ class ExprExecuter(ExprVisitor):
 
 
 
-Opcode = tuple
-BYTE_BINARY = (0, "binary")
-BYTE_LOADI = (1, "loadi")
-BYTE_LOAD = (2, "load")
-BYTE_CALL = (3, "call")
+Opcode = int
+BYTE_BINARY = 0
+BYTE_LOADI = 1
+BYTE_LOAD = 2
+BYTE_CALL = 3
+BYTE_HALT = 4
+
+
+def print_bytecode(code: list[tuple]):
+	BYTE_TO_STRING = {
+		BYTE_LOAD: "load",
+		BYTE_LOADI: "loadi",
+		BYTE_BINARY: "binary",
+		BYTE_CALL: "call",
+		BYTE_HALT: "halt"
+	}
+	for op, pa in code:
+		print(f"{BYTE_TO_STRING[op]}\t{pa if pa is not None else ""}")
+
+
+class LangVM:
+	def __init__(self, code):
+		self.frames: list[dict] = [{}, {
+			"input": input, "print": print, "true": 1, "false": 0, "null": None
+		}]
+		self.call_stack: list[CallInfo] = []
+		self.pc = 0
+		self.code: list[tuple] = code
+		self.stack = []
+
+	def error(self, msg):
+		poses = [(self.pc, self.pc, self.file)]
+		for c in self.call_stack[::-1]:
+			poses.append((c.line, c.col, c.file))
+		lngerr.generic_error(msg, poses, self.srcs)
+
+	def set_frame_variable(self, name, value):
+		for f in self.frames:
+			if name in f:
+				f[name] = value
+				return
+		self.error(f"variable {name!r} doesn't exist")
+
+	def create_frame_variable(self, name, value):
+		if name in self.frames[0]:
+			self.error(f"redefine variable {name!r}")
+		self.frames[0][name] = value
+
+	def get_frame_variable(self, name):
+		for f in self.frames:
+			if name in f:
+				return f[name]
+		self.error(f"variable {name!r} doesn't exist")
+
+	def push_frame(self, frame=None):
+		if frame is None:
+			self.frames.insert(0, {})
+		else:
+			self.frames.insert(0, frame)
+
+	def pop_frame(self):
+		return self.frames.pop(0)
+
+	def push(self, value):
+		self.stack.append(value)
+
+	def pop(self):
+		return self.stack.pop()
+
+	def top(self):
+		return self.stack[-1]
+
+
+	def run(self):
+		print_bytecode(self.code)
+		while True:
+			op, param = self.code[self.pc]
+			self.pc += 1
+
+			if op == BYTE_LOAD:
+				self.push(self.get_frame_variable(param))
+			elif op == BYTE_LOADI:
+				self.push(param)
+			
+			elif op == BYTE_BINARY:
+				rhs = self.pop()
+				lhs = self.pop()
+				match param:
+					case "+": self.push(lhs + rhs)
+
+			elif op == BYTE_CALL:
+				args = []
+				for i in range(param):
+					args.insert(0, self.pop())
+				fn = self.pop()
+				self.push(fn(*args))
+
+			elif op == BYTE_HALT:
+				break
+
+			else:
+				UNREACHABLE()
 
 
 class Compiler(ExprVisitor):
-	def emit(self, opcode: Opcode, param: Any = None):
-		print(f"{opcode[1]}\t{param}")
+	def __init__(self):
+		self.code = []
 
+	def emit(self, opcode: Opcode, param: Any = None):
+		# print(f"{opcode[1]}\t{param}")
+		self.code.append((opcode, param))
+
+
+	def visitProgram(self, ctx):
+		for e in ctx.expr():
+			self.visit(e)
+		self.emit(BYTE_HALT)
 
 	def visitBinary(self, ctx):
 		op = ctx.op.text
@@ -626,6 +730,8 @@ class Compiler(ExprVisitor):
 
 	def visitId(self, ctx):
 		self.emit(BYTE_LOAD, ctx.ID().getText())
+
+
 
 
 IS_COMPILE = False
@@ -662,7 +768,9 @@ def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs,
 	tree = parser.program()
 	if IS_COMPILE:
 		IS_COMPILE = False
-		return Compiler().visit(tree)
+		c = Compiler()
+		c.visit(tree)
+		return c.code
 	else:
 		return ExprExecuter(callstack, loading, cached, file, srcs, exts).visit(tree)
 
