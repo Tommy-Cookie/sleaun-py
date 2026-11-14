@@ -598,7 +598,7 @@ BYTE_CALL = 3
 BYTE_HALT = 4
 BYTE_POP = 5
 BYTE_CREATE = 6
-BYTE_ASSIGN = 7
+BYTE_ASSIGN_VAR = 7
 
 
 def print_bytecode(code: list[tuple]):
@@ -610,10 +610,10 @@ def print_bytecode(code: list[tuple]):
 		BYTE_HALT: "halt",
 		BYTE_POP: "pop",
 		BYTE_CREATE: "create",
-		BYTE_ASSIGN: "assign"
+		BYTE_ASSIGN_VAR: "assign_var"
 	}
 	for op, pa in code:
-		print(f"{BYTE_TO_STRING[op]}\t{repr(pa) if pa is not None else ""}")
+		print(f"{BYTE_TO_STRING[op]:<15}{repr(pa) if pa is not None else ""}")
 
 
 class LangVM:
@@ -701,6 +701,9 @@ class LangVM:
 			elif op == BYTE_CREATE:
 				value = self.top()
 				self.create_frame_variable(param, value)
+			elif op == BYTE_ASSIGN_VAR:
+				value = self.top()
+				self.set_frame_variable(param, value)
 
 			else:
 				UNREACHABLE()
@@ -727,9 +730,21 @@ class Compiler(ExprVisitor):
 		self.visit(ctx.expr(1))
 		self.emit(BYTE_BINARY, op)
 
+
 	def visitCreate(self, ctx):
 		self.visit(ctx.expr())
 		self.emit(BYTE_CREATE, ctx.ID().getText())
+
+	def visitAssign(self, ctx):
+		self.visit(ctx.expr(1))
+
+		expr = ctx.expr(0)
+		if isinstance(expr, ExprParser.SingleContext):
+			atom = expr.atom()
+			if isinstance(atom, ExprParser.IdContext):
+				self.emit(BYTE_ASSIGN_VAR, atom.ID().getText())
+		else:
+			UNREACHABLE()
 
 
 	def visitCall(self, ctx):
