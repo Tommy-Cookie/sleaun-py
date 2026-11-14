@@ -605,6 +605,8 @@ BYTE_LOADS = 10
 BYTE_LOADF = 11
 BYTE_MAKE_ARRAY = 12
 BYTE_MAKE_MAP = 13
+BYTE_JUMP = 14
+BYTE_JUMP_FALSE = 15
 
 
 def print_bytecode(code: list[tuple]):
@@ -622,10 +624,14 @@ def print_bytecode(code: list[tuple]):
 		BYTE_LOADS: "loads",
 		BYTE_LOADF: "loadf",
 		BYTE_MAKE_ARRAY: "make_array",
-		BYTE_MAKE_MAP: "make_map"
+		BYTE_MAKE_MAP: "make_map",
+		BYTE_JUMP: "jump",
+		BYTE_JUMP_FALSE: "jump_false"
 	}
+	n = 0
 	for op, pa in code:
-		print(f"{BYTE_TO_STRING[op]:<15}{repr(pa) if pa is not None else ""}")
+		print(f"{n:<5}{BYTE_TO_STRING[op]:<15}{repr(pa) if pa is not None else ""}")
+		n += 1
 
 
 class LangVM:
@@ -775,6 +781,13 @@ class LangVM:
 					mp[key] = val
 				self.push(mp)
 
+			elif op == BYTE_JUMP:
+				self.pc = param
+			elif op == BYTE_JUMP_FALSE:
+				cond = self.pop()
+				if not cond:
+					self.pc = param
+
 			else:
 				UNREACHABLE()
 
@@ -782,10 +795,30 @@ class LangVM:
 class Compiler(ExprVisitor):
 	def __init__(self):
 		self.code = []
+		self.pending = []
+		self.labels = {}
+		self.label_cnt = 0
 
 	def emit(self, ctx, opcode: Opcode, param: Any = None):
 		# print(f"{opcode[1]}\t{param}")
 		self.code.append((opcode, param))
+
+	def new_label(self):
+		self.label_cnt += 1
+		return self.label_cnt
+
+	def emit_jump(self, ctx, op, label):
+		self.emit(ctx, op, 0)
+		self.pending.append((len(self.code) - 1, label))
+
+	def place_label(self, label):
+		self.labels[label] = len(self.code)
+
+	def resolve_label(self):
+		for idx, label in self.pending:
+			op, _ = self.code[idx]
+			self.code[idx] = (op, self.labels[label])
+		self.pending.clear()
 
 	def solve_entry(self, ctx):
 		if isinstance(ctx, ExprParser.IdContext):
@@ -799,6 +832,7 @@ class Compiler(ExprVisitor):
 			self.visit(e)
 			self.emit(ctx, BYTE_POP)
 		self.emit(ctx, BYTE_HALT)
+		self.resolve_label()
 
 	def visitBinary(self, ctx):
 		op = ctx.op.text
@@ -852,6 +886,19 @@ class Compiler(ExprVisitor):
 		self.visit(ctx.expr()) # container
 		self.visit(ctx.ID().getText()) # attr
 		self.emit(ctx, BYTE_INDEX)
+
+
+	def visitTernary(self, ctx):
+		lelse = self.new_label()
+		lend = self.new_label()
+
+		self.visit(ctx.expr(0)) # condition
+		self.emit_jump(ctx, BYTE_JUMP_FALSE, lelse)
+		self.visit(ctx.expr(1)) # then
+		self.emit_jump(ctx, BYTE_JUMP, lend)
+		self.place_label(lelse)
+		self.visit(ctx.expr(2)) # else
+		self.place_label(lend)
 
 
 	def visitSingle(self, ctx):
