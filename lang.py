@@ -570,6 +570,14 @@ class ExprExecuter(ExprVisitor):
 		return val
 
 
+
+
+class Compiler(ExprVisitor):
+	...
+
+
+
+
 class LangErrorListener(ErrorListener):
 	def __init__(self, file: str, srcs):
 		self.file = file
