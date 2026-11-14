@@ -596,6 +596,9 @@ BYTE_LOADI = 1
 BYTE_LOAD = 2
 BYTE_CALL = 3
 BYTE_HALT = 4
+BYTE_POP = 5
+BYTE_CREATE = 6
+BYTE_ASSIGN = 7
 
 
 def print_bytecode(code: list[tuple]):
@@ -604,10 +607,13 @@ def print_bytecode(code: list[tuple]):
 		BYTE_LOADI: "loadi",
 		BYTE_BINARY: "binary",
 		BYTE_CALL: "call",
-		BYTE_HALT: "halt"
+		BYTE_HALT: "halt",
+		BYTE_POP: "pop",
+		BYTE_CREATE: "create",
+		BYTE_ASSIGN: "assign"
 	}
 	for op, pa in code:
-		print(f"{BYTE_TO_STRING[op]}\t{pa if pa is not None else ""}")
+		print(f"{BYTE_TO_STRING[op]}\t{repr(pa) if pa is not None else ""}")
 
 
 class LangVM:
@@ -689,6 +695,12 @@ class LangVM:
 
 			elif op == BYTE_HALT:
 				break
+			elif op == BYTE_POP:
+				self.pop()
+
+			elif op == BYTE_CREATE:
+				value = self.top()
+				self.create_frame_variable(param, value)
 
 			else:
 				UNREACHABLE()
@@ -706,6 +718,7 @@ class Compiler(ExprVisitor):
 	def visitProgram(self, ctx):
 		for e in ctx.expr():
 			self.visit(e)
+			self.emit(BYTE_POP)
 		self.emit(BYTE_HALT)
 
 	def visitBinary(self, ctx):
@@ -713,6 +726,10 @@ class Compiler(ExprVisitor):
 		self.visit(ctx.expr(0))
 		self.visit(ctx.expr(1))
 		self.emit(BYTE_BINARY, op)
+
+	def visitCreate(self, ctx):
+		self.visit(ctx.expr())
+		self.emit(BYTE_CREATE, ctx.ID().getText())
 
 
 	def visitCall(self, ctx):
