@@ -602,6 +602,7 @@ BYTE_ASSIGN_VAR = 7
 BYTE_ASSIGN_IDX = 8
 BYTE_INDEX = 9
 BYTE_LOADS = 10
+BYTE_LOADF = 11
 
 
 def print_bytecode(code: list[tuple]):
@@ -616,7 +617,8 @@ def print_bytecode(code: list[tuple]):
 		BYTE_ASSIGN_VAR: "assign_var",
 		BYTE_ASSIGN_IDX: "assign_idx",
 		BYTE_INDEX: "index",
-		BYTE_LOADS: "loads"
+		BYTE_LOADS: "loads",
+		BYTE_LOADF: "loadf"
 	}
 	for op, pa in code:
 		print(f"{BYTE_TO_STRING[op]:<15}{repr(pa) if pa is not None else ""}")
@@ -624,7 +626,7 @@ def print_bytecode(code: list[tuple]):
 
 class LangVM:
 	def __init__(self, code):
-		self.frames: list[dict] = [{"a": [1]}, {
+		self.frames: list[dict] = [{}, {
 			"input": input, "print": print, "true": 1, "false": 0, "null": None
 		}]
 		self.call_stack: list[CallInfo] = []
@@ -674,6 +676,25 @@ class LangVM:
 	def top(self):
 		return self.stack[-1]
 
+	def perform_binop(self, lhs, rhs, op):
+		if op == "/" and rhs == 0:
+			if lhs == 0: return float("nan")
+			if lhs < 0: return float("-inf")
+			return float("inf")
+		
+		try:
+			table = BINOP_TABLE[op]
+		except KeyError:
+			self.error(f"unknow infix operator {op!r}")
+				
+		try:
+			fn = table[type(lhs)][type(rhs)]
+		except KeyError:
+			self.error(f"cannot apply {op!r} to {type(lhs)} and {type(rhs)}")
+		
+		return fn(lhs, rhs)
+
+
 
 	def run(self):
 		print_bytecode(self.code)
@@ -689,8 +710,7 @@ class LangVM:
 			elif op == BYTE_BINARY:
 				rhs = self.pop()
 				lhs = self.pop()
-				match param:
-					case "+": self.push(lhs + rhs)
+				self.push(self.perform_binop(lhs, rhs, param))
 
 			elif op == BYTE_CALL:
 				args = []
@@ -714,12 +734,24 @@ class LangVM:
 			elif op == BYTE_INDEX:
 				index = self.pop()
 				target = self.pop()
-				self.push(target[index])
+				try:
+					self.push(target[index])
+				except IndexError:
+					self.error(f"index {index} out of range {len(target)}")
+				except KeyError:
+					self.error(f"key '{index}' doesn't exist")
+				except TypeError:
+					self.error(f"cannot index {type(target)}")
 			elif op == BYTE_ASSIGN_IDX:
 				value = self.pop()
 				index = self.pop()
 				target = self.pop()
-				target[index] = value
+				try:
+					target[index] = value
+				except IndexError:
+					self.error(f"index {index} out of range {len(target)}")
+				except TypeError:
+					self.error(f"cannot assign index {type(target)}")
 				self.push(value)
 
 			else:
@@ -809,6 +841,10 @@ class Compiler(ExprVisitor):
 	def visitString(self, ctx):
 		value = ctx.STRING().getText()
 		self.emit(BYTE_LOADS, value)
+
+	def visitFloat(self, ctx):
+		value = float(ctx.FLOAT().getText())
+		self.emit(BYTE_LOADF, value)
 
 
 
