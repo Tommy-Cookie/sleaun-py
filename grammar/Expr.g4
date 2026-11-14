@@ -13,7 +13,7 @@ def _block_like(self, ctx):
 	return False
 }
 
-program: ';'* (e=expr (';'+ | {self._block_like($e.ctx)}?))* ';'* EOF;
+program: (e=expr (';' | {self._block_like($e.ctx)}?))* EOF;
 
 expr: '(' expr ')' # Paren
 	| expr '(' (expr (',' expr)*)? ')' # Call
@@ -48,7 +48,7 @@ atom: <assoc=right> ID '(' (ID (',' ID)*)? ')' '=>' expr # NamedFn
 	| INT # Int
 	| STRING # String
 	| '[' (expr (',' expr )*)? ']' # Array
-	| '{' ';'* (e=expr (';'+ | {self._block_like($e.ctx)}?))* ';'* '}' # Block
+	| '{' (e=expr (';' | {self._block_like($e.ctx)}?))* '}' # Block
 	| '{' (entry (',' entry )*)? ','? '}' # Map
 	;
 
