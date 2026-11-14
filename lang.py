@@ -148,7 +148,9 @@ def UNREACHABLE():
 
 class ExprExecuter(ExprVisitor):
 	def __init__(self, callstack, loading, cached, file, srcs: dict):
-		self.frames: list[dict] = [{}, {"print": print, "true": 1, "false": 0, "null": None}]
+		self.frames: list[dict] = [{}, {
+			"input": input, "print": print, "true": 1, "false": 0, "null": None
+		}]
 		self.call_stack: list[CallInfo] = callstack
 		self.loading: list[str] = loading
 		self.cached: dict[str] = cached
