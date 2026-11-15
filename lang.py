@@ -609,6 +609,13 @@ BYTE_JUMP = 14
 BYTE_JUMP_FALSE = 15
 BYTE_PUSH_FRAME = 16
 BYTE_POP_FRAME = 17
+BYTE_DUP = 18
+BYTE_DUP_2 = 19
+BYTE_LOADB = 20
+BYTE_TMP_PUSH = 21
+BYTE_TMP_SET = 22
+BYTE_TMP_LOAD = 23
+BYTE_TMP_POP = 24
 
 
 def print_bytecode(code: list[tuple]):
@@ -630,7 +637,14 @@ def print_bytecode(code: list[tuple]):
 		BYTE_JUMP: "jump",
 		BYTE_JUMP_FALSE: "jump_false",
 		BYTE_PUSH_FRAME: "push_frame",
-		BYTE_POP_FRAME: "pop_frame"
+		BYTE_POP_FRAME: "pop_frame",
+		BYTE_DUP: "dup",
+		BYTE_DUP_2: "dup_2",
+		BYTE_LOADB: "loadb",
+		BYTE_TMP_PUSH: "tmp_push",
+		BYTE_TMP_SET: "tmp_set",
+		BYTE_TMP_LOAD: "tmp_load",
+		BYTE_TMP_POP: "tmp_pop",
 	}
 	n = 0
 	for op, pa in code:
@@ -649,6 +663,7 @@ class LangVM:
 		self.line_marks = lines
 		self.srcs = srcs
 		self.stack = []
+		self.temp = []
 
 	def error(self, msg):
 		p = self.line_marks[self.pc]
@@ -727,6 +742,8 @@ class LangVM:
 				self.push(param)
 			elif op == BYTE_LOADS:
 				self.push(param)
+			elif op == BYTE_LOADB:
+				self.push(None)
 			
 			elif op == BYTE_BINARY:
 				rhs = self.pop()
@@ -800,6 +817,22 @@ class LangVM:
 			elif op == BYTE_POP_FRAME:
 				self.pop_frame()
 
+			elif op == BYTE_DUP:
+				self.push(self.top())
+			elif op == BYTE_DUP_2:
+				self.push(self.stack[-2])
+				self.push(self.stack[-2])
+
+			elif op == BYTE_TMP_PUSH:
+				self.temp.append(self.top())
+			elif op == BYTE_TMP_POP:
+				self.temp.pop()
+			elif op == BYTE_TMP_SET:
+				value = self.top()
+				self.temp[-1] = value
+			elif op == BYTE_TMP_LOAD:
+				self.push(self.temp[-1])
+
 			else:
 				UNREACHABLE()
 
@@ -810,17 +843,25 @@ class Compiler(ExprVisitor):
 		self.line_marks = []
 		self.pending = []
 		self.labels = {}
-		self.label_cnt = 0
+		self.slots = 0
 		self.file = file
+		self.loop_stack = []
+		self.frame_depth = 1
 
 	def emit(self, ctx, opcode: Opcode, param: Any = None):
 		# print(f"{opcode[1]}\t{param}")
 		self.code.append((opcode, param))
 		self.line_marks.append((ctx.start.line, ctx.start.column + 1, self.file))
 
+		if opcode == BYTE_PUSH_FRAME: self.frame_depth += 1
+		elif opcode == BYTE_POP_FRAME: self.frame_depth -= 1
+
+	def next_slot(self):
+		self.slots += 1
+		return self.slots
+
 	def new_label(self):
-		self.label_cnt += 1
-		return self.label_cnt
+		return self.next_slot()
 
 	def emit_jump(self, ctx, op, label):
 		self.emit(ctx, op, 0)
@@ -858,6 +899,43 @@ class Compiler(ExprVisitor):
 		self.visit(ctx.expr(0))
 		self.visit(ctx.expr(1))
 		self.emit(ctx, BYTE_BINARY, op)
+
+	def visitInPlace(self, ctx):
+		lhs = ctx.expr(0)
+		rhs = ctx.expr(1)
+		op = ctx.op.text[:-1]
+
+		if isinstance(lhs, ExprParser.SingleContext):
+			atom = lhs.atom()
+			if isinstance(atom, ExprParser.IdContext):
+				name = atom.ID().getText()
+				self.emit(atom, BYTE_LOAD, name)
+				self.visit(rhs)
+				self.emit(atom, BYTE_BINARY, op)
+				self.emit(atom, BYTE_ASSIGN_VAR, name)
+				return
+
+		if isinstance(lhs, ExprParser.IndexContext):
+			self.visit(lhs.expr(0)) # a	
+			self.visit(lhs.expr(1))	# a, i
+			self.emit(lhs, BYTE_DUP_2) # a, i, a, i
+			self.emit(lhs, BYTE_INDEX) # a, i, a[i]
+			self.visit(rhs) # a, i, a[i], v
+			self.emit(lhs, BYTE_BINARY, op) # a, i, a[i] op v
+			self.emit(lhs, BYTE_ASSIGN_IDX)
+			return
+
+		if isinstance(lhs, ExprParser.AttrContext):
+			self.visit(lhs.expr()) # a
+			self.emit(lhs, BYTE_LOADS, lhs.ID().getText()) # a, i
+			self.emit(lhs, BYTE_DUP_2) # a, i, a, i
+			self.emit(lhs, BYTE_INDEX) # a, i, a[i]
+			self.visit(rhs) # a, i, a[i], v
+			self.emit(lhs, BYTE_BINARY, op) # a, i, a[i] op v
+			self.emit(lhs, BYTE_ASSIGN_IDX)
+			return
+
+		UNREACHABLE()
 
 
 	def visitCreate(self, ctx):
@@ -918,6 +996,33 @@ class Compiler(ExprVisitor):
 		self.place_label(lelse)
 		self.visit(ctx.expr(2)) # else
 		self.place_label(lend)
+
+	def visitWhile(self, ctx):
+		lstart = self.new_label()
+		lend = self.new_label()
+		depth = self.frame_depth
+
+		self.emit(ctx, BYTE_LOADB)
+		self.emit(ctx, BYTE_TMP_PUSH)
+
+		self.place_label(lstart)
+		
+		self.visit(ctx.expr(0)) # condition
+		self.emit_jump(ctx, BYTE_JUMP_FALSE, lend)
+		self.emit(ctx, BYTE_POP)
+
+		self.loop_stack.append((lstart, lend, depth))
+		self.visit(ctx.expr(1)) # body
+		self.loop_stack.pop()
+
+		self.emit(ctx, BYTE_TMP_SET)
+		self.emit_jump(ctx, BYTE_JUMP, lstart)
+
+		self.place_label(lend)
+		self.emit(ctx, BYTE_TMP_POP)
+
+	def visitBreak(self, ctx):
+		...
 
 
 	def visitSingle(self, ctx):
