@@ -638,6 +638,7 @@ BYTE_MATCHF_FALSE = 29
 BYTE_MATCHS_FALSE = 30
 BYTE_MATCHB = 31 # match binding
 BYTE_MATCH_MISS = 32
+BYTE_USE = 33
 
 
 def print_bytecode(codes: Program):
@@ -675,6 +676,7 @@ def print_bytecode(codes: Program):
 		BYTE_MATCHS_FALSE: "matchs_false",
 		BYTE_MATCHB: "matchb", # match binding
 		BYTE_MATCH_MISS: "match_miss",
+		BYTE_USE: "use"
 	}
 	for i, code in enumerate(codes.codes):
 		print(f"==== code[{i}]  {code.name}  params={code.args}  file={code.file} ====")
@@ -685,8 +687,9 @@ def print_bytecode(codes: Program):
 
 
 class LangVM:
-	def __init__(self, codes: Program):
-		self.frames: list[dict] = [{}, {
+	def __init__(self, codes: Program, cached = None, loading = None, exts = None):
+		self.exts = exts if exts is not None else []
+		self.frames: list[dict] = [{}, *self.exts, {
 			"input": input, "print": print, "true": 1, "false": 0, "null": None
 		}]
 		self.call_stack: list[CallInfo] = []
@@ -698,6 +701,8 @@ class LangVM:
 		self.temp = []
 		self.prog = codes
 		self.saved_states = []
+		self.cached = cached if cached is not None else {}
+		self.loading = loading if loading is not None else []
 
 	def error(self, msg):
 		p = self.line_marks[self.pc]
@@ -763,6 +768,7 @@ class LangVM:
 
 
 	def run(self):
+		global IS_COMPILE
 		print_bytecode(self.prog)
 		while True:
 			op, param = self.code.code[self.pc]
@@ -938,10 +944,43 @@ class LangVM:
 			elif op == BYTE_MATCH_MISS:
 				self.error(f"no pattern matched value {self.pop()}")
 
+			elif op == BYTE_USE:
+				path: list[str] = param.split(".")
+				rep: str = param
+
+				if rep in self.cached:
+					self.push(self.cached[rep])
+					continue
+
+				if rep in self.loading:
+					start = self.loading.index(rep)
+					chain = self.loading[start:] + [rep]
+					self.error(f"circular using: '{"' -> '".join(chain)}'")
+
+				path = "/".join(path) + SLEAUN
+				path = os.path.abspath(path)
+				self.loading.append(rep)
+				try:
+					with open(path, encoding="utf-8") as file:
+						src = file.read()
+
+					self.srcs[rep] = src
+					IS_COMPILE = True
+					module = parse_and_execute_src(src, self.call_stack, self.loading, self.cached, rep, self.srcs, self.exts)
+					vm = LangVM(module, self.cached, self.loading, self.exts)
+					module = vm.run()
+				except Exception as e:
+					self.error(f"error while loading module '{rep}': {e}")
+				finally:
+					self.loading.pop()
+
+				self.cached[rep] = module
+				self.push(module)
 			else:
 				UNREACHABLE()
 
 			# print(self.frames, self.stack, self.temp)
+		return self.stack[-1]
 
 
 class Compiler(ExprVisitor):
@@ -1019,6 +1058,26 @@ class Compiler(ExprVisitor):
 			params, self.file, sub.code, sub.line_marks, name, self.srcs
 		)
 		return idx
+
+	def solve_use(self, ctx, ids):
+		path = [i.getText() for i in ids]
+		path = ".".join(path)
+		self.emit(ctx, BYTE_USE, path)
+		return path[-1]
+
+
+	def visitUse(self, ctx):
+		name = self.solve_use(ctx, ctx.ID())
+		self.emit(ctx, BYTE_CREATE, name)
+		self.emit(ctx, BYTE_POP)
+		self.emit(ctx, BYTE_LOADB)
+
+	def visitUseWithBind(self, ctx):
+		ids = ctx.ID()
+		self.solve_use(ctx, ids[:-1])
+		self.emit(ctx, BYTE_CREATE, ids[-1].getText())
+		self.emit(ctx, BYTE_POP)
+		self.emit(ctx, BYTE_LOADB)
 
 
 	def visitProgram(self, ctx):
@@ -1177,7 +1236,7 @@ class Compiler(ExprVisitor):
 
 	def visitAttr(self, ctx):
 		self.visit(ctx.expr()) # container
-		self.visit(ctx.ID().getText()) # attr
+		self.emit(ctx, BYTE_LOADS, ctx.ID().getText()) # attr
 		self.emit(ctx, BYTE_INDEX)
 
 
