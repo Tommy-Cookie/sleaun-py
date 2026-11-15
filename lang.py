@@ -625,7 +625,7 @@ BYTE_PUSH_FRAME = 16
 BYTE_POP_FRAME = 17
 BYTE_DUP = 18
 BYTE_DUP_2 = 19
-BYTE_LOADB = 20
+BYTE_LOADB = 20 # load blank
 BYTE_TMP_PUSH = 21
 BYTE_TMP_SET = 22
 BYTE_TMP_LOAD = 23
@@ -633,6 +633,11 @@ BYTE_TMP_POP = 24
 BYTE_UNARY = 25
 BYTE_MAKE_FUNC = 26
 BYTE_RETURN = 27
+BYTE_MATCHI_FALSE = 28 # jump to param if match false, else binding
+BYTE_MATCHF_FALSE = 29
+BYTE_MATCHS_FALSE = 30
+BYTE_MATCHB = 31 # match binding
+BYTE_MATCH_MISS = 32
 
 
 def print_bytecode(codes: Program):
@@ -664,7 +669,12 @@ def print_bytecode(codes: Program):
 		BYTE_TMP_POP: "tmp_pop",
 		BYTE_UNARY: "unary",
 		BYTE_MAKE_FUNC: "make_func",
-		BYTE_RETURN: "return"
+		BYTE_RETURN: "return",
+		BYTE_MATCHI_FALSE: "matchi_false",
+		BYTE_MATCHF_FALSE: "matchf_false",
+		BYTE_MATCHS_FALSE: "matchs_false",
+		BYTE_MATCHB: "matchb", # match binding
+		BYTE_MATCH_MISS: "match_miss",
 	}
 	for i, code in enumerate(codes.codes):
 		print(f"==== code[{i}]  {code.name}  params={code.args}  file={code.file} ====")
@@ -901,10 +911,37 @@ class LangVM:
 					code.args, code, sub_frames, self.line_marks[self.pc][2], code.name
 				))
 
+			elif op == BYTE_MATCHI_FALSE:
+				value = self.pop()
+				target = self.top()
+				if not (type(target) is int and target == value):
+					self.pc = param
+				else:
+					self.push_frame()
+			elif op == BYTE_MATCHF_FALSE:
+				value = self.pop()
+				target = self.top()
+				if not (type(target) is float and target == value):
+					self.pc = param
+				else:
+					self.push_frame()
+			elif op == BYTE_MATCHS_FALSE:
+				value = self.pop()
+				target = self.top()
+				if not (type(target) is str and target == value):
+					self.pc = param
+				else:
+					self.push_frame()
+			elif op == BYTE_MATCHB:
+				value = self.top()
+				self.push_frame({param: value})
+			elif op == BYTE_MATCH_MISS:
+				self.error(f"no pattern matched value {self.pop()}")
+
 			else:
 				UNREACHABLE()
 
-			# print(self.stack, self.temp)
+			# print(self.frames, self.stack, self.temp)
 
 
 class Compiler(ExprVisitor):
@@ -1050,6 +1087,43 @@ class Compiler(ExprVisitor):
 		params = [i.getText() for i in ctx.ID()]
 		idx = self.solve_function(ctx.expr(), params, "<anonymous>")
 		self.emit(ctx, BYTE_MAKE_FUNC, idx)
+
+
+	def visitMatch(self, ctx):
+		lend = self.new_label()
+		labs = [self.new_label() for _ in ctx.arm()]
+
+		self.visit(ctx.expr())
+
+		for i, arm in enumerate(ctx.arm()):
+			pat = arm.atom()
+			body = arm.expr()
+			nxtlab = labs[i]
+
+			if isinstance(pat, ExprParser.IdContext):
+				name = pat.ID().getText()
+				self.emit(ctx, BYTE_MATCHB, name)
+			elif isinstance(pat, ExprParser.IntContext):
+				self.visit(pat)
+				self.emit_jump(ctx, BYTE_MATCHI_FALSE, nxtlab)
+			elif isinstance(pat, ExprParser.FloatContext):
+				self.visit(pat)
+				self.emit_jump(ctx, BYTE_MATCHF_FALSE, nxtlab)
+			elif isinstance(pat, ExprParser.StringContext):
+				self.visit(pat)
+				self.emit_jump(ctx, BYTE_MATCHS_FALSE, nxtlab)
+			else:
+				self.error(f"unsuported matching arm type {pat!r}")
+
+			self.emit(ctx, BYTE_POP)
+			self.visit(body)
+			self.emit_jump(ctx, BYTE_JUMP, lend)
+
+			self.place_label(nxtlab)
+
+		self.emit(ctx, BYTE_MATCH_MISS)
+		self.place_label(lend)
+		self.emit(ctx, BYTE_POP_FRAME)
 
 
 	def visitCreate(self, ctx):
