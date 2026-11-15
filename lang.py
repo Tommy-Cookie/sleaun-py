@@ -592,7 +592,7 @@ class ExprExecuter(ExprVisitor):
 
 @dataclass
 class CodeObject:
-	params: list[str]
+	args: list[str]
 	file: str
 	code: list[tuple]
 	line_marks: list[tuple]
@@ -667,7 +667,7 @@ def print_bytecode(codes: Program):
 		BYTE_RETURN: "return"
 	}
 	for i, code in enumerate(codes.codes):
-		print(f"==== code[{i}]  {code.name}  params={code.params}  file={code.file} ====")
+		print(f"==== code[{i}]  {code.name}  params={code.args}  file={code.file} ====")
 		n = 0
 		for op, pa in code.code:
 			print(f"{n:>5}  {BYTE_TO_STRING[op]:<13}  {repr(pa) if pa is not None else ""}")
@@ -687,6 +687,7 @@ class LangVM:
 		self.stack = []
 		self.temp = []
 		self.prog = codes
+		self.saved_states = []
 
 	def error(self, msg):
 		p = self.line_marks[self.pc]
@@ -778,7 +779,31 @@ class LangVM:
 				for i in range(param):
 					args.insert(0, self.pop())
 				fn = self.pop()
-				self.push(fn(*args))
+
+				if callable(fn):
+					self.push(fn(*args))
+
+				elif isinstance(fn, Function):
+					if len(args) != len(fn.args):
+						self.error(f"{fn.name} requires {len(fn.args)} argument(s), got {len(args)} instead")
+
+					lmark = self.line_marks[self.pc - 1]
+					self.call_stack.append(CallInfo(*lmark))
+
+					self.saved_states.append((
+						self.code, self.pc, self.frames, self.line_marks
+					))
+					self.code = fn.body
+					self.pc = 0
+					self.line_marks = fn.body.line_marks
+					self.frames = [dict(zip(fn.args, args))] + fn.sub_frames.copy()
+
+				else:
+					self.error(f"{fn} is not callable")
+
+			elif op == BYTE_RETURN:
+				self.call_stack.pop()
+				self.code, self.pc, self.frames, self.line_marks = self.saved_states.pop()
 
 			elif op == BYTE_HALT:
 				break
@@ -868,6 +893,13 @@ class LangVM:
 					self.push(~value)
 				if param == "!":
 					self.push(1 if not value else 0)
+
+			elif op == BYTE_MAKE_FUNC:
+				code: CodeObject = self.prog.codes[param]
+				sub_frames = self.frames.copy()
+				self.push(Function(
+					code.args, code, sub_frames, self.line_marks[self.pc][2], code.name
+				))
 
 			else:
 				UNREACHABLE()
