@@ -976,6 +976,7 @@ class Compiler(ExprVisitor):
 		sub = Compiler(self.file, self.srcs, self.codes)
 		sub.visit(body)
 		sub.emit(body, BYTE_RETURN)
+		sub.resolve_label()
 
 		self.codes[idx] = CodeObject(
 			params, self.file, sub.code, sub.line_marks, name, self.srcs
@@ -1085,6 +1086,14 @@ class Compiler(ExprVisitor):
 		self.visit(ctx.expr(0))
 		args = [self.visit(t) for t in ctx.expr()[1:]]
 		self.emit(ctx, BYTE_CALL, len(args))
+
+	def visitReturn(self, ctx):
+		value = ctx.expr()
+		if value is None:
+			self.emit(ctx, BYTE_LOADB)
+		else:
+			self.visit(value)
+		self.emit(ctx, BYTE_RETURN)
 
 
 	def visitIndex(self, ctx):
