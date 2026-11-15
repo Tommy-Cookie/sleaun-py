@@ -606,7 +606,7 @@ class Program:
 
 Opcode = int
 BYTE_BINARY = 0
-BYTE_LOADI = 1
+BYTE_LOADI64 = 1
 BYTE_LOAD = 2
 BYTE_CALL = 3
 BYTE_HALT = 4
@@ -616,7 +616,7 @@ BYTE_ASSIGN_VAR = 7
 BYTE_ASSIGN_IDX = 8
 BYTE_INDEX = 9
 BYTE_LOADS = 10
-BYTE_LOADF = 11
+BYTE_LOADF64 = 11
 BYTE_MAKE_ARRAY = 12
 BYTE_MAKE_MAP = 13
 BYTE_JUMP = 14
@@ -639,12 +639,15 @@ BYTE_MATCHS_FALSE = 30
 BYTE_MATCHB = 31 # match binding
 BYTE_MATCH_MISS = 32
 BYTE_USE = 33
+BYTE_LOADI32 = 34
+BYTE_LOADI16 = 35
+BYTE_LOADI8 = 36
 
 
 def print_bytecode(codes: Program):
 	BYTE_TO_STRING = {
 		BYTE_LOAD: "load",
-		BYTE_LOADI: "loadi",
+		BYTE_LOADI64: "loadi64",
 		BYTE_BINARY: "binary",
 		BYTE_CALL: "call",
 		BYTE_HALT: "halt",
@@ -654,7 +657,7 @@ def print_bytecode(codes: Program):
 		BYTE_ASSIGN_IDX: "assign_idx",
 		BYTE_INDEX: "index",
 		BYTE_LOADS: "loads",
-		BYTE_LOADF: "loadf",
+		BYTE_LOADF64: "loadf64",
 		BYTE_MAKE_ARRAY: "make_array",
 		BYTE_MAKE_MAP: "make_map",
 		BYTE_JUMP: "jump",
@@ -676,7 +679,10 @@ def print_bytecode(codes: Program):
 		BYTE_MATCHS_FALSE: "matchs_false",
 		BYTE_MATCHB: "matchb", # match binding
 		BYTE_MATCH_MISS: "match_miss",
-		BYTE_USE: "use"
+		BYTE_USE: "use",
+		BYTE_LOADI32: "loadi32",
+		BYTE_LOADI16: "loadi16",
+		BYTE_LOADI8: "loadi8"
 	}
 	for i, code in enumerate(codes.codes):
 		print(f"==== code[{i}]  {code.name}  params={code.args}  file={code.file} ====")
@@ -684,6 +690,11 @@ def print_bytecode(codes: Program):
 		for op, pa in code.code:
 			print(f"{n:>5}  {BYTE_TO_STRING[op]:<13}  {repr(pa) if pa is not None else ""}")
 			n += 1
+
+SLEAUN_C_VERSION = 1
+
+def dump_program(prog: Program, filepath: str):
+	...
 
 
 class LangVM:
@@ -776,9 +787,9 @@ class LangVM:
 
 			if op == BYTE_LOAD:
 				self.push(self.get_frame_variable(param))
-			elif op == BYTE_LOADI:
+			elif op == BYTE_LOADI64 or op == BYTE_LOADI32 or op == BYTE_LOADI16 or op == BYTE_LOADI8:
 				self.push(param)
-			elif op == BYTE_LOADF:
+			elif op == BYTE_LOADF64:
 				self.push(param)
 			elif op == BYTE_LOADS:
 				self.push(param)
@@ -1319,7 +1330,14 @@ class Compiler(ExprVisitor):
 
 	def visitInt(self, ctx):
 		value = int(ctx.INT().getText())
-		self.emit(ctx, BYTE_LOADI, value)
+		if -128 <= value <= 127:
+			self.emit(ctx, BYTE_LOADI8, value)
+		elif -32768 <= value <= 32767:
+			self.emit(ctx, BYTE_LOADI16, value)
+		elif -2147483658 <= value <= 2147483647:
+			self.emit(ctx, BYTE_LOADI32, value)
+		else:
+			self.emit(ctx, BYTE_LOADI64, value)
 
 	def visitId(self, ctx):
 		self.emit(ctx, BYTE_LOAD, ctx.ID().getText())
@@ -1330,7 +1348,7 @@ class Compiler(ExprVisitor):
 
 	def visitFloat(self, ctx):
 		value = float(ctx.FLOAT().getText())
-		self.emit(ctx, BYTE_LOADF, value)
+		self.emit(ctx, BYTE_LOADF64, value)
 
 	def visitArray(self, ctx):
 		vals = [self.visit(e) for e in ctx.expr()]
