@@ -597,11 +597,11 @@ class CodeObject:
 	code: list[tuple]
 	line_marks: list[tuple]
 	name: str
-	srcs: str
 
 @dataclass
 class Program:
 	codes: list[CodeObject]
+	srcs: dict
 
 
 Opcode = int
@@ -696,7 +696,7 @@ class LangVM:
 		self.pc = 0
 		self.code: CodeObject = codes.codes[0]
 		self.line_marks = self.code.line_marks
-		self.srcs = self.code.srcs
+		self.srcs = codes.srcs
 		self.stack = []
 		self.temp = []
 		self.prog = codes
@@ -1055,7 +1055,7 @@ class Compiler(ExprVisitor):
 		sub.resolve_label()
 
 		self.codes[idx] = CodeObject(
-			params, self.file, sub.code, sub.line_marks, name, self.srcs
+			params, self.file, sub.code, sub.line_marks, name
 		)
 		return idx
 
@@ -1390,9 +1390,9 @@ def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs,
 		c = Compiler(file, srcs, codes)
 		c.visit(tree)
 		codes[0] = CodeObject(
-			[], c.file, c.code, c.line_marks, "<main>", srcs
+			[], c.file, c.code, c.line_marks, "<main>"
 		)
-		return Program(codes)
+		return Program(codes, srcs)
 	else:
 		return ExprExecuter(callstack, loading, cached, file, srcs, exts).visit(tree)
 
