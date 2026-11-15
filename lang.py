@@ -616,6 +616,7 @@ BYTE_TMP_PUSH = 21
 BYTE_TMP_SET = 22
 BYTE_TMP_LOAD = 23
 BYTE_TMP_POP = 24
+BYTE_UNARY = 25
 
 
 def print_bytecode(code: list[tuple]):
@@ -645,6 +646,7 @@ def print_bytecode(code: list[tuple]):
 		BYTE_TMP_SET: "tmp_set",
 		BYTE_TMP_LOAD: "tmp_load",
 		BYTE_TMP_POP: "tmp_pop",
+		BYTE_UNARY: "unary"
 	}
 	n = 0
 	for op, pa in code:
@@ -833,10 +835,23 @@ class LangVM:
 			elif op == BYTE_TMP_LOAD:
 				self.push(self.temp[-1])
 
+			elif op == BYTE_UNARY:
+				value = self.pop()
+				if param == "+":
+					self.push(+value)
+				if param == "-":
+					self.push(-value)
+				if param == "~":
+					if type(value) is not int:
+						self.error(f"cannot apply {param!r} to {value}")
+					self.push(~value)
+				if param == "!":
+					self.push(1 if not value else 0)
+
 			else:
 				UNREACHABLE()
 
-			print(self.stack, self.temp)
+			# print(self.stack, self.temp)
 
 
 class Compiler(ExprVisitor):
@@ -908,6 +923,11 @@ class Compiler(ExprVisitor):
 		self.visit(ctx.expr(0))
 		self.visit(ctx.expr(1))
 		self.emit(ctx, BYTE_BINARY, op)
+
+	def visitUnary(self, ctx):
+		op = ctx.op.text
+		self.visit(ctx.expr())
+		self.emit(ctx, BYTE_UNARY, op)
 
 	def visitInPlace(self, ctx):
 		lhs = ctx.expr(0)
@@ -1064,6 +1084,9 @@ class Compiler(ExprVisitor):
 		self.emit_jump(ctx, BYTE_JUMP, loop[0])
 		self.frame_depth = saved
 
+
+	def visitParen(self, ctx):
+		self.visit(ctx.expr())
 
 	def visitSingle(self, ctx):
 		self.visit(ctx.atom())
