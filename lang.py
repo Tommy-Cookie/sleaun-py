@@ -607,6 +607,8 @@ BYTE_MAKE_ARRAY = 12
 BYTE_MAKE_MAP = 13
 BYTE_JUMP = 14
 BYTE_JUMP_FALSE = 15
+BYTE_PUSH_FRAME = 16
+BYTE_POP_FRAME = 17
 
 
 def print_bytecode(code: list[tuple]):
@@ -626,7 +628,9 @@ def print_bytecode(code: list[tuple]):
 		BYTE_MAKE_ARRAY: "make_array",
 		BYTE_MAKE_MAP: "make_map",
 		BYTE_JUMP: "jump",
-		BYTE_JUMP_FALSE: "jump_false"
+		BYTE_JUMP_FALSE: "jump_false",
+		BYTE_PUSH_FRAME: "push_frame",
+		BYTE_POP_FRAME: "pop_frame"
 	}
 	n = 0
 	for op, pa in code:
@@ -635,20 +639,23 @@ def print_bytecode(code: list[tuple]):
 
 
 class LangVM:
-	def __init__(self, code):
+	def __init__(self, code, lines, srcs):
 		self.frames: list[dict] = [{}, {
 			"input": input, "print": print, "true": 1, "false": 0, "null": None
 		}]
 		self.call_stack: list[CallInfo] = []
 		self.pc = 0
 		self.code: list[tuple] = code
+		self.line_marks = lines
+		self.srcs = srcs
 		self.stack = []
 
 	def error(self, msg):
-		poses = [(self.pc, self.pc, "<>")]
+		p = self.line_marks[self.pc]
+		poses = [(p[0], p[1], p[2])]
 		for c in self.call_stack[::-1]:
 			poses.append((c.line, c.col, c.file))
-		lngerr.generic_error(msg, poses, {})
+		lngerr.generic_error(msg, poses, self.srcs)
 
 	def set_frame_variable(self, name, value):
 		for f in self.frames:
@@ -788,20 +795,28 @@ class LangVM:
 				if not cond:
 					self.pc = param
 
+			elif op == BYTE_PUSH_FRAME:
+				self.push_frame()
+			elif op == BYTE_POP_FRAME:
+				self.pop_frame()
+
 			else:
 				UNREACHABLE()
 
 
 class Compiler(ExprVisitor):
-	def __init__(self):
+	def __init__(self, file):
 		self.code = []
+		self.line_marks = []
 		self.pending = []
 		self.labels = {}
 		self.label_cnt = 0
+		self.file = file
 
 	def emit(self, ctx, opcode: Opcode, param: Any = None):
 		# print(f"{opcode[1]}\t{param}")
 		self.code.append((opcode, param))
+		self.line_marks.append((ctx.start.line, ctx.start.column + 1, self.file))
 
 	def new_label(self):
 		self.label_cnt += 1
@@ -826,11 +841,15 @@ class Compiler(ExprVisitor):
 		else:
 			self.visit(ctx)
 
+	def visit_batch(self, exprs):
+		for i, e in enumerate(exprs, 1):
+			self.visit(e)
+			if len(exprs) - i != 0:
+				self.emit(e, BYTE_POP)
+
 
 	def visitProgram(self, ctx):
-		for e in ctx.expr():
-			self.visit(e)
-			self.emit(ctx, BYTE_POP)
+		self.visit_batch(ctx.expr())
 		self.emit(ctx, BYTE_HALT)
 		self.resolve_label()
 
@@ -931,6 +950,11 @@ class Compiler(ExprVisitor):
 			n += 1
 		self.emit(ctx, BYTE_MAKE_MAP, n)
 
+	def visitBlock(self, ctx):
+		self.emit(ctx, BYTE_PUSH_FRAME)
+		self.visit_batch(ctx.expr())
+		self.emit(ctx, BYTE_POP_FRAME)
+
 
 
 
@@ -968,9 +992,9 @@ def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs,
 	tree = parser.program()
 	if IS_COMPILE:
 		IS_COMPILE = False
-		c = Compiler()
+		c = Compiler(file)
 		c.visit(tree)
-		return c.code
+		return c.code, c.line_marks, srcs
 	else:
 		return ExprExecuter(callstack, loading, cached, file, srcs, exts).visit(tree)
 
