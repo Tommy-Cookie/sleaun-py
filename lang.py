@@ -590,6 +590,20 @@ class ExprExecuter(ExprVisitor):
 
 
 
+@dataclass
+class CodeObject:
+	params: list[str]
+	file: str
+	code: list[tuple]
+	line_marks: list[tuple]
+	name: str
+	srcs: str
+
+@dataclass
+class Program:
+	codes: list[CodeObject]
+
+
 Opcode = int
 BYTE_BINARY = 0
 BYTE_LOADI = 1
@@ -617,9 +631,11 @@ BYTE_TMP_SET = 22
 BYTE_TMP_LOAD = 23
 BYTE_TMP_POP = 24
 BYTE_UNARY = 25
+BYTE_MAKE_FUNC = 26
+BYTE_RETURN = 27
 
 
-def print_bytecode(code: list[tuple]):
+def print_bytecode(codes: Program):
 	BYTE_TO_STRING = {
 		BYTE_LOAD: "load",
 		BYTE_LOADI: "loadi",
@@ -646,26 +662,31 @@ def print_bytecode(code: list[tuple]):
 		BYTE_TMP_SET: "tmp_set",
 		BYTE_TMP_LOAD: "tmp_load",
 		BYTE_TMP_POP: "tmp_pop",
-		BYTE_UNARY: "unary"
+		BYTE_UNARY: "unary",
+		BYTE_MAKE_FUNC: "make_func",
+		BYTE_RETURN: "return"
 	}
-	n = 0
-	for op, pa in code:
-		print(f"{n:>5}  {BYTE_TO_STRING[op]:<13}  {repr(pa) if pa is not None else ""}")
-		n += 1
+	for i, code in enumerate(codes.codes):
+		print(f"==== code[{i}]  {code.name}  params={code.params}  file={code.file} ====")
+		n = 0
+		for op, pa in code.code:
+			print(f"{n:>5}  {BYTE_TO_STRING[op]:<13}  {repr(pa) if pa is not None else ""}")
+			n += 1
 
 
 class LangVM:
-	def __init__(self, code, lines, srcs):
+	def __init__(self, codes: Program):
 		self.frames: list[dict] = [{}, {
 			"input": input, "print": print, "true": 1, "false": 0, "null": None
 		}]
 		self.call_stack: list[CallInfo] = []
 		self.pc = 0
-		self.code: list[tuple] = code
-		self.line_marks = lines
-		self.srcs = srcs
+		self.code: CodeObject = codes.codes[0]
+		self.line_marks = self.code.line_marks
+		self.srcs = self.code.srcs
 		self.stack = []
 		self.temp = []
+		self.prog = codes
 
 	def error(self, msg):
 		p = self.line_marks[self.pc]
@@ -731,9 +752,9 @@ class LangVM:
 
 
 	def run(self):
-		print_bytecode(self.code)
+		print_bytecode(self.prog)
 		while True:
-			op, param = self.code[self.pc]
+			op, param = self.code.code[self.pc]
 			self.pc += 1
 
 			if op == BYTE_LOAD:
@@ -855,7 +876,7 @@ class LangVM:
 
 
 class Compiler(ExprVisitor):
-	def __init__(self, file, srcs):
+	def __init__(self, file, srcs, codes):
 		self.code = []
 		self.line_marks = []
 		self.pending = []
@@ -865,6 +886,7 @@ class Compiler(ExprVisitor):
 		self.loop_stack = []
 		self.frame_depth = 1
 		self.srcs = srcs
+		self.codes: list = codes
 
 	def error(self, msg, ctx):
 		poses = [(ctx.start.line, ctx.start.column, self.file)]
@@ -906,15 +928,31 @@ class Compiler(ExprVisitor):
 		else:
 			self.visit(ctx)
 
-	def visit_batch(self, exprs):
+	def visit_batch(self, exprs, ctx):
+		if len(exprs) == 0:
+			self.emit(ctx, BYTE_LOADB)
+			return
 		for i, e in enumerate(exprs, 1):
 			self.visit(e)
 			if len(exprs) - i != 0:
 				self.emit(e, BYTE_POP)
 
+	def solve_function(self, body, params, name):
+		idx = len(self.codes)
+		self.codes.append(None)
+
+		sub = Compiler(self.file, self.srcs, self.codes)
+		sub.visit(body)
+		sub.emit(body, BYTE_RETURN)
+
+		self.codes[idx] = CodeObject(
+			params, self.file, sub.code, sub.line_marks, name, self.srcs
+		)
+		return idx
+
 
 	def visitProgram(self, ctx):
-		self.visit_batch(ctx.expr())
+		self.visit_batch(ctx.expr(), ctx)
 		self.emit(ctx, BYTE_HALT)
 		self.resolve_label()
 
@@ -965,6 +1003,20 @@ class Compiler(ExprVisitor):
 			return
 
 		UNREACHABLE()
+
+
+	def visitNamedFn(self, ctx):
+		ids = ctx.ID()
+		name = ids[0].getText()
+		params = [i.getText() for i in ids[1:]]
+		idx = self.solve_function(ctx.expr(), params, name)
+		self.emit(ctx, BYTE_MAKE_FUNC, idx)
+		self.emit(ctx, BYTE_CREATE, name)
+
+	def visitAnonyFn(self, ctx):
+		params = [i.getText() for i in ctx.ID()]
+		idx = self.solve_function(ctx.expr(), params, "<anonymous>")
+		self.emit(ctx, BYTE_MAKE_FUNC, idx)
 
 
 	def visitCreate(self, ctx):
@@ -1120,11 +1172,7 @@ class Compiler(ExprVisitor):
 
 	def visitBlock(self, ctx):
 		self.emit(ctx, BYTE_PUSH_FRAME)
-		exprs = ctx.expr()
-		if len(exprs) == 0:
-			self.emit(ctx, BYTE_LOADB)
-		else:
-			self.visit_batch(exprs)
+		self.visit_batch(ctx.expr(), ctx)
 		self.emit(ctx, BYTE_POP_FRAME)
 
 
@@ -1164,9 +1212,13 @@ def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs,
 	tree = parser.program()
 	if IS_COMPILE:
 		IS_COMPILE = False
-		c = Compiler(file, srcs)
+		codes = [None]
+		c = Compiler(file, srcs, codes)
 		c.visit(tree)
-		return c.code, c.line_marks, srcs
+		codes[0] = CodeObject(
+			[], c.file, c.code, c.line_marks, "<main>", srcs
+		)
+		return Program(codes)
 	else:
 		return ExprExecuter(callstack, loading, cached, file, srcs, exts).visit(tree)
 
