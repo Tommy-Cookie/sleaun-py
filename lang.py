@@ -648,7 +648,7 @@ def print_bytecode(code: list[tuple]):
 	}
 	n = 0
 	for op, pa in code:
-		print(f"{n:<5}{BYTE_TO_STRING[op]:<15}{repr(pa) if pa is not None else ""}")
+		print(f"{n:>5}  {BYTE_TO_STRING[op]:<13}  {repr(pa) if pa is not None else ""}")
 		n += 1
 
 
@@ -836,9 +836,11 @@ class LangVM:
 			else:
 				UNREACHABLE()
 
+			print(self.stack, self.temp)
+
 
 class Compiler(ExprVisitor):
-	def __init__(self, file):
+	def __init__(self, file, srcs):
 		self.code = []
 		self.line_marks = []
 		self.pending = []
@@ -847,6 +849,13 @@ class Compiler(ExprVisitor):
 		self.file = file
 		self.loop_stack = []
 		self.frame_depth = 1
+		self.srcs = srcs
+
+	def error(self, msg, ctx):
+		poses = [(ctx.start.line, ctx.start.column, self.file)]
+		for c in self.call_stack[::-1]:
+			poses.append((c.line, c.col, c.file))
+		lngerr.generic_error(msg, poses, self.srcs)
 
 	def emit(self, ctx, opcode: Opcode, param: Any = None):
 		# print(f"{opcode[1]}\t{param}")
@@ -1022,7 +1031,38 @@ class Compiler(ExprVisitor):
 		self.emit(ctx, BYTE_TMP_POP)
 
 	def visitBreak(self, ctx):
-		...
+		if not self.loop_stack:
+			self.error("break outside loop", ctx)
+
+		loop = self.loop_stack[-1]
+		value = ctx.expr()
+		saved = self.frame_depth
+
+		# print(loop)
+		if value is not None:
+			self.visit(value)
+		else:
+			self.emit(ctx, BYTE_LOADB)
+
+		for i in range(self.frame_depth - loop[2]):
+			self.emit(ctx, BYTE_POP_FRAME)
+
+		self.emit_jump(ctx, BYTE_JUMP, loop[1])
+		self.frame_depth = saved
+
+	def visitContinue(self, ctx):
+		if not self.loop_stack:
+			self.error("continue outside loop", ctx)
+
+		saved = self.frame_depth
+		loop = self.loop_stack[-1]
+		# print(loop)
+		for i in range(self.frame_depth - loop[2]):
+			self.emit(ctx, BYTE_POP_FRAME)
+
+		self.emit(ctx, BYTE_TMP_LOAD)
+		self.emit_jump(ctx, BYTE_JUMP, loop[0])
+		self.frame_depth = saved
 
 
 	def visitSingle(self, ctx):
@@ -1036,7 +1076,7 @@ class Compiler(ExprVisitor):
 		self.emit(ctx, BYTE_LOAD, ctx.ID().getText())
 
 	def visitString(self, ctx):
-		value = ctx.STRING().getText()
+		value = ctx.STRING().getText()[1:-1]
 		self.emit(ctx, BYTE_LOADS, value)
 
 	def visitFloat(self, ctx):
@@ -1057,7 +1097,11 @@ class Compiler(ExprVisitor):
 
 	def visitBlock(self, ctx):
 		self.emit(ctx, BYTE_PUSH_FRAME)
-		self.visit_batch(ctx.expr())
+		exprs = ctx.expr()
+		if len(exprs) == 0:
+			self.emit(ctx, BYTE_LOADB)
+		else:
+			self.visit_batch(exprs)
 		self.emit(ctx, BYTE_POP_FRAME)
 
 
@@ -1097,7 +1141,7 @@ def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs,
 	tree = parser.program()
 	if IS_COMPILE:
 		IS_COMPILE = False
-		c = Compiler(file)
+		c = Compiler(file, srcs)
 		c.visit(tree)
 		return c.code, c.line_marks, srcs
 	else:
