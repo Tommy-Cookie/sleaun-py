@@ -704,6 +704,7 @@ codes: u32: length [code object]*
 if flags.has_debug
 	file: [string]
 	src: u32 length, chars data (no string pool)
+u32: crc32 checksum
 
 [bytecode]
 u8: opcode, ...?: param
