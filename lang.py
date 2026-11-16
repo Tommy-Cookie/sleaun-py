@@ -696,7 +696,7 @@ class Program:
 SLEAUN_C_VERSION = 1
 
 """
-magic: SLC\x00
+magic: SLEC
 version: u16: 1
 flags: u8 bit0: has_debug
 string pool: [string pool]
