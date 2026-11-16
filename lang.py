@@ -590,20 +590,6 @@ class ExprExecuter(ExprVisitor):
 
 
 
-@dataclass
-class CodeObject:
-	args: list[str]
-	code: list[tuple]
-	line_marks: list[tuple]
-	name: str
-
-@dataclass
-class Program:
-	codes: list[CodeObject]
-	src: str
-	file: str
-
-
 Opcode = int
 BYTE_BINARY = 0
 BYTE_LOADI64 = 1
@@ -692,8 +678,50 @@ def print_bytecode(prog: Program):
 			print(f"{n:>5}  {BYTE_TO_STRING[op]:<13}  {repr(pa) if pa is not None else ""}")
 			n += 1
 
+
+@dataclass
+class CodeObject:
+	args: list[str]
+	code: list[tuple]
+	line_marks: list[tuple]
+	name: str
+
+@dataclass
+class Program:
+	codes: list[CodeObject]
+	src: str
+	file: str
+
+
 SLEAUN_C_VERSION = 1
 
+"""
+magic: SLC\x00
+version: u16: 1
+incl. debug: i8 0/1
+string pool: [string pool]
+codes: u32: length [code object]*
+if incl. debug
+	file: [string]
+	src: [string]
+
+[bytecode]
+u8: opcode, ...?: param
+
+[code object]
+name: [string]
+args: u32: length, [string]*
+code: u32: length, [bytecode]*
+if incl. debug
+	line marks: run-length encoding: u32: line, u32: col
+
+[string pool]
+u32: nmuber of strings
+( u32: length, chars: data )*
+
+[string]
+u32: entry to string pool
+"""
 def dump_program(prog: Program, filepath: str):
 	...
 
