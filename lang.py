@@ -713,7 +713,7 @@ name: [string]
 args: u32: length, [string]*
 code: u32: length, [bytecode]*
 if incl. debug
-	line marks: run-length encoding: u32: line, u32: col
+	line marks: run-length encoding (u8: repeats): u32: line, u32: col
 
 [string pool]
 u32: nmuber of strings
