@@ -593,7 +593,6 @@ class ExprExecuter(ExprVisitor):
 @dataclass
 class CodeObject:
 	args: list[str]
-	file: str
 	code: list[tuple]
 	line_marks: list[tuple]
 	name: str
@@ -601,7 +600,8 @@ class CodeObject:
 @dataclass
 class Program:
 	codes: list[CodeObject]
-	srcs: dict
+	src: str
+	file: str
 
 
 Opcode = int
@@ -644,7 +644,7 @@ BYTE_LOADI16 = 35
 BYTE_LOADI8 = 36
 
 
-def print_bytecode(codes: Program):
+def print_bytecode(prog: Program):
 	BYTE_TO_STRING = {
 		BYTE_LOAD: "load",
 		BYTE_LOADI64: "loadi64",
@@ -684,8 +684,9 @@ def print_bytecode(codes: Program):
 		BYTE_LOADI16: "loadi16",
 		BYTE_LOADI8: "loadi8"
 	}
-	for i, code in enumerate(codes.codes):
-		print(f"==== code[{i}]  {code.name}  params={code.args}  file={code.file} ====")
+	print(f"[ program  file={prog.file} ]")
+	for i, code in enumerate(prog.codes):
+		print(f"==== code[{i}]  {code.name}  params={code.args} ====")
 		n = 0
 		for op, pa in code.code:
 			print(f"{n:>5}  {BYTE_TO_STRING[op]:<13}  {repr(pa) if pa is not None else ""}")
@@ -698,26 +699,27 @@ def dump_program(prog: Program, filepath: str):
 
 
 class LangVM:
-	def __init__(self, codes: Program, cached = None, loading = None, exts = None):
+	def __init__(self, prog: Program, cached=None, loading=None, exts=None, srcs=None):
 		self.exts = exts if exts is not None else []
 		self.frames: list[dict] = [{}, *self.exts, {
 			"input": input, "print": print, "true": 1, "false": 0, "null": None
 		}]
 		self.call_stack: list[CallInfo] = []
 		self.pc = 0
-		self.code: CodeObject = codes.codes[0]
+		self.code: CodeObject = prog.codes[0]
 		self.line_marks = self.code.line_marks
-		self.srcs = codes.srcs
+		self.srcs = {prog.file: prog.src} if srcs is None else srcs
 		self.stack = []
 		self.temp = []
-		self.prog = codes
+		self.prog = prog
 		self.saved_states = []
 		self.cached = cached if cached is not None else {}
 		self.loading = loading if loading is not None else []
+		self.file = prog.file
 
 	def error(self, msg):
 		p = self.line_marks[self.pc]
-		poses = [(p[0], p[1], p[2])]
+		poses = [(p[0], p[1], self.file)]
 		for c in self.call_stack[::-1]:
 			poses.append((c.line, c.col, c.file))
 		lngerr.generic_error(msg, poses, self.srcs)
@@ -779,7 +781,6 @@ class LangVM:
 
 
 	def run(self):
-		global IS_COMPILE
 		print_bytecode(self.prog)
 		while True:
 			op, param = self.code.code[self.pc]
@@ -815,7 +816,7 @@ class LangVM:
 						self.error(f"{fn.name} requires {len(fn.args)} argument(s), got {len(args)} instead")
 
 					lmark = self.line_marks[self.pc - 1]
-					self.call_stack.append(CallInfo(*lmark))
+					self.call_stack.append(CallInfo(*lmark, self.file))
 
 					self.saved_states.append((
 						self.code, self.pc, self.frames, self.line_marks
@@ -925,7 +926,7 @@ class LangVM:
 				code: CodeObject = self.prog.codes[param]
 				sub_frames = self.frames.copy()
 				self.push(Function(
-					code.args, code, sub_frames, self.line_marks[self.pc][2], code.name
+					code.args, code, sub_frames, self.file, code.name
 				))
 
 			elif op == BYTE_MATCHI_FALSE:
@@ -976,9 +977,9 @@ class LangVM:
 						src = file.read()
 
 					self.srcs[rep] = src
-					IS_COMPILE = True
-					module = parse_and_execute_src(src, self.call_stack, self.loading, self.cached, rep, self.srcs, self.exts)
-					vm = LangVM(module, self.cached, self.loading, self.exts)
+					tree = parse_src(src, rep)
+					prog = compile_program(tree, src, rep)
+					vm = LangVM(prog, self.cached, self.loading, self.exts, self.srcs)
 					module = vm.run()
 				except Exception as e:
 					self.error(f"error while loading module '{rep}': {e}")
@@ -1016,7 +1017,7 @@ class Compiler(ExprVisitor):
 	def emit(self, ctx, opcode: Opcode, param: Any = None):
 		# print(f"{opcode[1]}\t{param}")
 		self.code.append((opcode, param))
-		self.line_marks.append((ctx.start.line, ctx.start.column + 1, self.file))
+		self.line_marks.append((ctx.start.line, ctx.start.column + 1))
 
 		if opcode == BYTE_PUSH_FRAME: self.frame_depth += 1
 		elif opcode == BYTE_POP_FRAME: self.frame_depth -= 1
@@ -1066,7 +1067,7 @@ class Compiler(ExprVisitor):
 		sub.resolve_label()
 
 		self.codes[idx] = CodeObject(
-			params, self.file, sub.code, sub.line_marks, name
+			params, sub.code, sub.line_marks, name
 		)
 		return idx
 
@@ -1370,8 +1371,6 @@ class Compiler(ExprVisitor):
 
 
 
-IS_COMPILE = False
-
 class LangErrorListener(ErrorListener):
 	def __init__(self, file: str, srcs):
 		self.file = file
@@ -1388,31 +1387,38 @@ def module_name(file_path: str):
 	return base.replace("/", ".").replace("\\", ".")
 
 
-def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs, exts):
-	global IS_COMPILE
-
+def parse_src(src: str, file):
 	input_stream = InputStream(src)
 
 	lexer = ExprLexer(input_stream)
 	lexer.removeErrorListeners()
-	lexer.addErrorListener(LangErrorListener(file, srcs))
+	lexer.addErrorListener(LangErrorListener(file, {file: src}))
 	
 	parser = ExprParser(CommonTokenStream(lexer))
 	parser.removeErrorListeners()
-	parser.addErrorListener(LangErrorListener(file, srcs))
+	parser.addErrorListener(LangErrorListener(file, {file: src}))
 	
-	tree = parser.program()
-	if IS_COMPILE:
-		IS_COMPILE = False
-		codes = [None]
-		c = Compiler(file, srcs, codes)
-		c.visit(tree)
-		codes[0] = CodeObject(
-			[], c.file, c.code, c.line_marks, "<main>"
-		)
-		return Program(codes, srcs)
-	else:
-		return ExprExecuter(callstack, loading, cached, file, srcs, exts).visit(tree)
+	return parser.program()
+
+
+def compile_program(tree, src, file):
+	codes = [None]
+	c = Compiler(file, src, codes)
+	c.visit(tree)
+	codes[0] = CodeObject(
+		[], c.code, c.line_marks, "<main>"
+	)
+	return Program(codes, src, file)
+
+
+def execute_vm(prog: Program, exts=None):
+	vm = LangVM(prog, None, None, exts)
+	return vm.run()
+
+
+def parse_and_execute_src(src: str, callstack, loading, cached, file: str, srcs, exts):
+	tree = parse_src(src, file)
+	return ExprExecuter(callstack, loading, cached, file, srcs, exts).visit(tree)
 
 
 def parse_and_execute(file_path, extensions = None):
