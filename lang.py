@@ -698,10 +698,10 @@ SLEAUN_C_VERSION = 1
 """
 magic: SLC\x00
 version: u16: 1
-flags: u8 bit0: incldebug
+flags: u8 bit0: has_debug
 string pool: [string pool]
 codes: u32: length [code object]*
-if flags.incldebug
+if flags.has_debug
 	file: [string]
 	src: u32 length, chars data (no string pool)
 
@@ -712,7 +712,7 @@ u8: opcode, ...?: param
 name: [string]
 args: u32: length, [string]*
 code: u32: length, [bytecode]*
-if flags.incldebug
+if flags.has_debug
 	line marks: u32: count, run-length encoding (u8: repeats): u32: line, u32: col
 
 [string pool]
