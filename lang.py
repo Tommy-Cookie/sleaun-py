@@ -698,12 +698,12 @@ SLEAUN_C_VERSION = 1
 """
 magic: SLC\x00
 version: u16: 1
-incl. debug: i8 0/1
+flags: u8 bit0: incldebug
 string pool: [string pool]
 codes: u32: length [code object]*
-if incl. debug
+if flags.incldebug
 	file: [string]
-	src: [string]
+	src: u32 length, chars data (no string pool)
 
 [bytecode]
 u8: opcode, ...?: param
@@ -712,8 +712,8 @@ u8: opcode, ...?: param
 name: [string]
 args: u32: length, [string]*
 code: u32: length, [bytecode]*
-if incl. debug
-	line marks: run-length encoding (u8: repeats): u32: line, u32: col
+if flags.incldebug
+	line marks: u32: count, run-length encoding (u8: repeats): u32: line, u32: col
 
 [string pool]
 u32: nmuber of strings
@@ -847,11 +847,12 @@ class LangVM:
 					self.call_stack.append(CallInfo(*lmark, self.file))
 
 					self.saved_states.append((
-						self.code, self.pc, self.frames, self.line_marks
+						self.code, self.pc, self.frames, self.line_marks, self.file
 					))
 					self.code = fn.body
 					self.pc = 0
 					self.line_marks = fn.body.line_marks
+					self.file = fn.file
 					self.frames = [dict(zip(fn.args, args))] + fn.sub_frames.copy()
 
 				else:
@@ -859,7 +860,7 @@ class LangVM:
 
 			elif op == BYTE_RETURN:
 				self.call_stack.pop()
-				self.code, self.pc, self.frames, self.line_marks = self.saved_states.pop()
+				self.code, self.pc, self.frames, self.line_marks, self.file = self.saved_states.pop()
 
 			elif op == BYTE_HALT:
 				break
