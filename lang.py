@@ -1,6 +1,6 @@
 
 import lngerr
-import os
+import os, struct
 from antlr4 import *
 from antlr4.error.ErrorListener import *
 from ExprLexer import ExprLexer
@@ -8,6 +8,7 @@ from ExprParser import ExprParser
 from ExprVisitor import ExprVisitor
 from dataclasses import dataclass
 from typing import Callable, Any
+from zlib import crc32
 
 
 SLEAUN = ".slea"
@@ -694,7 +695,41 @@ class Program:
 
 
 SLEAUN_C_VERSION = 1
+SLEAUN_MAGIC = b"SLEC"
 
+I64 = 0
+I32 = 1
+I16 = 2
+I8 = 3
+F64 = 4
+STRING = 5
+U32 = 6
+U8 = 7
+U16 = 8
+OPCODE_ARGS = {
+	BYTE_BINARY: STRING,
+	BYTE_LOADI64: I64,
+	BYTE_LOAD: STRING,
+	BYTE_CALL: U8,
+	BYTE_CREATE: STRING,
+	BYTE_ASSIGN_VAR: STRING,
+	BYTE_LOADS: STRING,
+	BYTE_LOADF64: F64,
+	BYTE_MAKE_ARRAY: U32,
+	BYTE_MAKE_MAP: U32,
+	BYTE_JUMP: U32,
+	BYTE_JUMP_FALSE: U32,
+	BYTE_UNARY: STRING,
+	BYTE_MAKE_FUNC: U16,
+	BYTE_MATCHI_FALSE: U32,
+	BYTE_MATCHF_FALSE: U32,
+	BYTE_MATCHS_FALSE: U32,
+	BYTE_MATCHB: STRING,
+	BYTE_USE: STRING,
+	BYTE_LOADI32: I32,
+	BYTE_LOADI16: I16,
+	BYTE_LOADI8: I8
+}
 """
 magic: SLEC
 version: u16: 1
@@ -702,7 +737,7 @@ flags: u8 bit0: has_debug
 string pool: [string pool]
 codes: u32: length [code object]*
 if flags.has_debug
-	file: [string]
+	file: u32 length, chars data (no string pool)
 	src: u32 length, chars data (no string pool)
 u32: crc32 checksum
 
@@ -714,7 +749,7 @@ name: [string]
 args: u32: length, [string]*
 code: u32: length, [bytecode]*
 if flags.has_debug
-	line marks: u32: count, run-length encoding (u8: repeats): u32: line, u32: col
+	line marks: u32: count, ( u32: line, u32: col )*
 
 [string pool]
 u32: nmuber of strings
@@ -723,8 +758,80 @@ u32: nmuber of strings
 [string]
 u32: entry to string pool
 """
-def dump_program(prog: Program, filepath: str):
-	...
+def dump_program(prog: Program):
+	final = bytearray()
+	string_pool = []
+	data = bytearray()
+	has_debug = 1
+
+	def new_string(string: str) -> int:
+		if string in string_pool:
+			return string_pool.index(string)
+		at = len(string_pool)
+		string_pool.append(string)
+		return at
+
+	def pack_string(string: str):
+		return struct.pack("<I", new_string(string))
+
+	def pack_inline_str(dst: bytearray, string: str):
+		encoded = bytes(string, encoding="utf-8")
+		dst.extend(struct.pack("<I", len(encoded)))
+		dst.extend(encoded)
+
+	def pack_var(typ, val):
+		if typ == I8: return struct.pack("<b", val)
+		if typ == I16: return struct.pack("<h", val)
+		if typ == I32: return struct.pack("<i", val)
+		if typ == I64: return struct.pack("<q", val)
+		if typ == F64: return struct.pack("<d", val)
+		if typ == STRING: return pack_string(val)
+		if typ == U8: return struct.pack("<B", val)
+		if typ == U16: return struct.pack("<H", val)
+		if typ == U32: return struct.pack("<I", val)
+		return bytes()
+
+	# header
+	final.extend(SLEAUN_MAGIC)
+	final.extend(struct.pack("<H", SLEAUN_C_VERSION))
+	final.extend([has_debug]) # include debug
+
+	# code object
+	data.extend(struct.pack("<I", len(prog.codes)))
+	for co in prog.codes:
+		data.extend(pack_string(co.name))
+
+		data.extend(struct.pack("<I", len(co.args)))
+		for i in co.args:
+			data.extend(pack_string(i))
+
+		data.extend(struct.pack("<I", len(co.code)))
+		for c in co.code:
+			data.extend([c[0]])
+			typ = OPCODE_ARGS.get(c[0], -1)
+			data.extend(pack_var(typ, c[1]))
+
+		if not has_debug:
+			continue
+
+		data.extend(struct.pack("<I", len(co.line_marks)))
+		for l in co.line_marks:
+			data.extend(struct.pack("<I", l[0]))
+			data.extend(struct.pack("<I", l[1]))
+
+	final.extend(struct.pack("<I", len(string_pool)))
+	for i in string_pool:
+		pack_inline_str(final, i)
+	final.extend(data)
+
+	if has_debug:
+		pack_inline_str(final, prog.file)
+		pack_inline_str(final, prog.src)
+
+	crc = crc32(final)
+	final.extend(struct.pack("<I", crc))
+
+	return final
 
 
 class LangVM:
