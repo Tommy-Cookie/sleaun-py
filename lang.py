@@ -12,6 +12,7 @@ from zlib import crc32
 
 
 SLEAUN = ".slea"
+SLEAUN_C = ".slec"
 """
 EXTENSION CONVENTION
 [{namespace: {name: callable}}, ...]
@@ -632,6 +633,11 @@ BYTE_LOADI8 = 36
 
 
 def print_bytecode(prog: Program):
+	def get_mark(marks, i):
+		if i >= len(marks):
+			return (-1, -1)
+		return marks[i]
+
 	BYTE_TO_STRING = {
 		BYTE_LOAD: "load",
 		BYTE_LOADI64: "loadi64",
@@ -675,7 +681,12 @@ def print_bytecode(prog: Program):
 	for i, code in enumerate(prog.codes):
 		print(f"==== code[{i}]  {code.name}  params={code.args} ====")
 		n = 0
+		prevpos = -1
 		for op, pa in code.code:
+			mark = get_mark(code.line_marks, n)
+			if mark[0] != prevpos:
+				print(f"line {mark[0]}:")
+				prevpos = mark[0]
 			print(f"{n:>5}  {BYTE_TO_STRING[op]:<13}  {repr(pa) if pa is not None else ""}")
 			n += 1
 
@@ -831,7 +842,90 @@ def dump_program(prog: Program):
 	crc = crc32(final)
 	final.extend(struct.pack("<I", crc))
 
-	return final
+	return bytes(final)
+
+
+def load_program(byts: bytes):
+	if byts[:len(SLEAUN_MAGIC)] != SLEAUN_MAGIC:
+		raise ValueError(f"invalid program file")
+
+	pos = 0
+	def i8():  nonlocal pos; v = struct.unpack_from("<b", data, pos)[0]; pos += 1; return v
+	def i16(): nonlocal pos; v = struct.unpack_from("<h", data, pos)[0]; pos += 2; return v
+	def i32(): nonlocal pos; v = struct.unpack_from("<i", data, pos)[0]; pos += 4; return v
+	def i64(): nonlocal pos; v = struct.unpack_from("<q", data, pos)[0]; pos += 8; return v
+	def u8():  nonlocal pos; v = struct.unpack_from("<B", data, pos)[0]; pos += 1; return v
+	def u16(): nonlocal pos; v = struct.unpack_from("<H", data, pos)[0]; pos += 2; return v
+	def u32(): nonlocal pos; v = struct.unpack_from("<I", data, pos)[0]; pos += 4; return v
+	def f64(): nonlocal pos; v = struct.unpack_from("<d", data, pos)[0]; pos += 8; return v
+	def adv(n): nonlocal pos; v = data[pos:pos + n]; pos += n; return v
+
+	def get_str(): 
+		i = u32()
+		return string_pool[i]
+	
+	def get_var(typ):
+		if typ == I8: return i8()
+		if typ == I16: return i16()
+		if typ == I32: return i32()
+		if typ == I64: return i64()
+		if typ == STRING: return get_str()
+		if typ == U8: return u8()
+		if typ == U16: return u16()
+		if typ == U32: return u32()
+		if typ == F64: return f64()
+		return None
+
+	checksum = struct.unpack("<I", byts[-4:])[0]
+	data = byts[:-4]
+	datasum = crc32(data)
+	if checksum != datasum:
+		raise ValueError(f"file may broken")
+
+	data = data[len(SLEAUN_MAGIC):]
+	version = u16()
+	if version != SLEAUN_C_VERSION:
+		raise ValueError(f"format version not support")
+
+	has_debug = u8() & 1
+	string_pool = []
+
+	for i in range(u32()):
+		length = u32()
+		string = adv(length).decode()
+		string_pool.append(string)
+
+	codes = []
+	for i in range(u32()):
+		name = get_str()
+
+		args = []
+		for j in range(u32()):
+			args.append(get_str())
+
+		code = []
+		for j in range(u32()):
+			opcode = u8()
+			typ = OPCODE_ARGS.get(opcode, -1)
+			param = get_var(typ)
+			code.append((opcode, param))
+
+		line_marks = []
+		if has_debug:
+			for j in range(u32()):
+				ln = u32()
+				co = u32()
+				line_marks.append((ln, co))
+
+		codes.append(CodeObject(args, code, line_marks, name))
+
+	file = "<unknown>"
+	src = ""
+	if has_debug:
+		file = adv(u32()).decode()
+		src = adv(u32()).decode()
+
+	return Program(codes, src, file)
 
 
 class LangVM:
@@ -917,7 +1011,6 @@ class LangVM:
 
 
 	def run(self):
-		print_bytecode(self.prog)
 		while True:
 			op, param = self.code.code[self.pc]
 			self.pc += 1
