@@ -23,7 +23,7 @@ expr: '(' expr ')' # Paren
 	| expr op='&&' expr # Binary
 	| expr op='||' expr # Binary
 	| <assoc=right> expr op=('+=' | '-=' | '*=' | '/=' | '&=' | '|=' | '^=' | '&&=' | '||=' | '<<=' | '>>=') expr # InPlace
-	| expr op=('<' | '>' | '==' | '<=' | '>=') expr # Binary
+	| expr op=('<' | '>' | '==' | '<=' | '>=' | '!=') expr # Binary
 	| <assoc=right> expr '?' expr ':' expr # Ternary
 	| <assoc=right> expr '::' expr # While
 	| <assoc=right> ID ':=' expr # Create

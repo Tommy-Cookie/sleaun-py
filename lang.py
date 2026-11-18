@@ -29,6 +29,7 @@ greater = lambda a, b: 1 if a > b else 0
 eq = lambda a, b: 1 if a == b else 0
 lesseq = lambda a, b: 1 if a <= b else 0
 greatereq = lambda a, b: 1 if a >= b else 0
+neq = lambda a, b: 1 if a != b else 0
 bitand = lambda a, b: a & b
 bitor = lambda a, b: a | b
 bitxor = lambda a, b: a ^ b
@@ -76,6 +77,10 @@ BINOP_TABLE = {
 	">=": {
 		int: {int: greatereq, float: greatereq},
 		float: {int: greatereq, float: greatereq}
+	},
+	"!=": {
+		int: {int: neq, float: neq},
+		float: {int: neq, float: neq}
 	},
 	"&": {
 		int: {int: bitand}
