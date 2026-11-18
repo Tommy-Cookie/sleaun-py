@@ -774,11 +774,12 @@ u32: nmuber of strings
 [string]
 u32: entry to string pool
 """
+DUMP_HAS_DEBUG = 1
 def dump_program(prog: Program):
 	final = bytearray()
 	string_pool = []
 	data = bytearray()
-	has_debug = 0
+	has_debug = DUMP_HAS_DEBUG
 
 	def new_string(string: str) -> int:
 		if string in string_pool:
