@@ -933,6 +933,35 @@ def load_program(byts: bytes):
 	return Program(codes, src, file)
 
 
+def dump_into(prog: Program, rep: str):
+	path = rep.replace(".", "/") + SLEAUN_C
+	path = os.path.abspath(path)
+
+	data = dump_program(prog)
+	with open(path, "wb") as file:
+		file.write(data)
+
+
+def load_from(rep: str):
+	path = rep.replace(".", "/") + SLEAUN_C
+	path = os.path.abspath(path)
+
+	with open(path, "rb") as file:
+		data = file.read()
+	return load_program(data)
+
+
+def compile_from(rep: str):
+	path = rep.replace(".", "/") + SLEAUN
+	path = os.path.abspath(path)
+
+	with open(path, encoding="utf-8") as file:
+		src = file.read()
+
+	tree = parse_src(src, rep)
+	return compile_program(tree, src, rep)	
+
+
 class LangVM:
 	def __init__(self, prog: Program, cached=None, loading=None, exts=None, srcs=None):
 		self.exts = exts if exts is not None else []
@@ -955,8 +984,11 @@ class LangVM:
 	def error(self, msg):
 		p = self.line_marks[self.pc]
 		poses = [(p[0], p[1], self.file)]
+
+		print(self.srcs)
 		for c in self.call_stack[::-1]:
 			poses.append((c.line, c.col, c.file))
+
 		lngerr.generic_error(msg, poses, self.srcs)
 
 	def set_frame_variable(self, name, value):
@@ -1192,7 +1224,6 @@ class LangVM:
 				self.error(f"no pattern matched value {self.pop()}")
 
 			elif op == BYTE_USE:
-				path: list[str] = param.split(".")
 				rep: str = param
 
 				if rep in self.cached:
@@ -1204,16 +1235,10 @@ class LangVM:
 					chain = self.loading[start:] + [rep]
 					self.error(f"circular using: '{"' -> '".join(chain)}'")
 
-				path = "/".join(path) + SLEAUN
-				path = os.path.abspath(path)
 				self.loading.append(rep)
 				try:
-					with open(path, encoding="utf-8") as file:
-						src = file.read()
-
-					self.srcs[rep] = src
-					tree = parse_src(src, rep)
-					prog = compile_program(tree, src, rep)
+					prog = load_from(rep)
+					self.srcs[rep] = prog.src
 					vm = LangVM(prog, self.cached, self.loading, self.exts, self.srcs)
 					module = vm.run()
 				except Exception as e:
