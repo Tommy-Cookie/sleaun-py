@@ -985,7 +985,6 @@ class LangVM:
 		p = self.line_marks[self.pc]
 		poses = [(p[0], p[1], self.file)]
 
-		print(self.srcs)
 		for c in self.call_stack[::-1]:
 			poses.append((c.line, c.col, c.file))
 
