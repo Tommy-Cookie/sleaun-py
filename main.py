@@ -36,3 +36,6 @@ try:
 	lang.execute_vm(progf)
 except Exception as e:
 	print(f"ERROR: {e}")
+
+
+lang.execute_vm(progf)

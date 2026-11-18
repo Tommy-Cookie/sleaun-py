@@ -778,7 +778,7 @@ def dump_program(prog: Program):
 	final = bytearray()
 	string_pool = []
 	data = bytearray()
-	has_debug = 1
+	has_debug = 0
 
 	def new_string(string: str) -> int:
 		if string in string_pool:
@@ -985,7 +985,10 @@ class LangVM:
 		self.file = prog.file
 
 	def error(self, msg):
-		p = self.line_marks[self.pc]
+		if 0 <= self.pc < len(self.line_marks):
+			p = self.line_marks[self.pc]
+		else:
+			p = (0, 0)
 		poses = [(p[0], p[1], self.file)]
 
 		for c in self.call_stack[::-1]:
@@ -1083,7 +1086,10 @@ class LangVM:
 					if len(args) != len(fn.args):
 						self.error(f"{fn.name} requires {len(fn.args)} argument(s), got {len(args)} instead")
 
-					lmark = self.line_marks[self.pc - 1]
+					if 0 <= self.pc < len(self.line_marks):
+						lmark = self.line_marks[self.pc - 1]
+					else:
+						lmark = (0, 0)
 					self.call_stack.append(CallInfo(*lmark, self.file))
 
 					self.saved_states.append((
