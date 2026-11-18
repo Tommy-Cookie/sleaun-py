@@ -933,9 +933,14 @@ def load_program(byts: bytes):
 	return Program(codes, src, file)
 
 
-def dump_into(prog: Program, rep: str):
-	path = rep.replace(".", "/") + SLEAUN_C
+def into_path(rep: str, ext: str):
+	path = rep.replace(".", "/") + ext
 	path = os.path.abspath(path)
+	return path
+
+
+def dump_into(prog: Program, rep: str):
+	path = into_path(rep, SLEAUN_C)
 
 	data = dump_program(prog)
 	with open(path, "wb") as file:
@@ -943,8 +948,7 @@ def dump_into(prog: Program, rep: str):
 
 
 def load_from(rep: str):
-	path = rep.replace(".", "/") + SLEAUN_C
-	path = os.path.abspath(path)
+	path = into_path(rep, SLEAUN_C)
 
 	with open(path, "rb") as file:
 		data = file.read()
@@ -952,8 +956,7 @@ def load_from(rep: str):
 
 
 def compile_from(rep: str):
-	path = rep.replace(".", "/") + SLEAUN
-	path = os.path.abspath(path)
+	path = into_path(rep, SLEAUN)
 
 	with open(path, encoding="utf-8") as file:
 		src = file.read()
